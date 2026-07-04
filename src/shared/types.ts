@@ -64,6 +64,11 @@ export interface ShellEnvRefreshResult {
   shell: string
 }
 
+export interface ResolvedCommand {
+  name: string
+  path: string
+}
+
 export interface CliExplorerApi {
   discover: (binaryPath: string) => Promise<CommandTree>
   run: (req: RunRequest) => Promise<string>
@@ -73,6 +78,10 @@ export interface CliExplorerApi {
   shellEnv: {
     status: () => Promise<ShellEnvStatus>
     refresh: () => Promise<ShellEnvRefreshResult>
+  }
+  scan: {
+    resolve: (name: string) => Promise<string | null>
+    suggest: (names?: string[]) => Promise<ResolvedCommand[]>
   }
   registry: {
     list: () => Promise<CliEntry[]>

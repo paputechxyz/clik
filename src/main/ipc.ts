@@ -3,6 +3,7 @@ import { RunManager } from './runner'
 import { Registry } from './registry'
 import { discoverTree } from './adapter'
 import { ShellEnvCache } from './shell-env'
+import { resolveOnPath, scanCandidates, DEFAULT_CANDIDATES } from './scanner'
 import type { RunRequest, CliEntry, RunEvent } from '../shared/types'
 
 export interface IpcCleanup {
@@ -56,6 +57,11 @@ export function registerIpc(getWin: () => BrowserWindow | null): IpcCleanup {
       }
     }
   })
+
+  ipcMain.handle('scan:resolve', (_e, name: string) => resolveOnPath(String(name ?? ''), shellEnv.current))
+  ipcMain.handle('scan:suggest', (_e, names?: string[]) =>
+    scanCandidates(names && names.length > 0 ? names : DEFAULT_CANDIDATES, shellEnv.current)
+  )
 
   ipcMain.handle('registry:list', () => registry.list())
   ipcMain.handle('registry:add', (_e, entry: Omit<CliEntry, 'id'>) => registry.add(entry))

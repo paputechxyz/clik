@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import type { CliEntry, ShellEnvStatus } from '../../../shared/types'
+import { useEffect, useRef, useState } from 'react'
+import type { CliEntry, ResolvedCommand, ShellEnvStatus } from '../../../shared/types'
 import { useAppStore } from '../store/useAppStore'
 
 function serializeEnv(env: Record<string, string>): string {
@@ -28,37 +28,68 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
 
   const [newName, setNewName] = useState('')
   const [newPath, setNewPath] = useState('')
+  const [autoPath, setAutoPath] = useState(false)
+  const autoRef = useRef('')
   const [shellStatus, setShellStatus] = useState<ShellEnvStatus | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [suggestions, setSuggestions] = useState<ResolvedCommand[]>([])
 
   useEffect(() => {
     void window.cliExplorer.shellEnv.status().then(setShellStatus)
+    void window.cliExplorer.scan.suggest().then(setSuggestions)
   }, [])
 
   const refreshShell = async () => {
     setRefreshing(true)
     await window.cliExplorer.shellEnv.refresh()
     setShellStatus(await window.cliExplorer.shellEnv.status())
+    setSuggestions(await window.cliExplorer.scan.suggest())
     setRefreshing(false)
+  }
+
+  const resolveName = async (name: string): Promise<string | null> => {
+    if (name.trim() === '') return null
+    return window.cliExplorer.scan.resolve(name)
+  }
+
+  const onNameBlur = async () => {
+    const p = await resolveName(newName)
+    if (p) {
+      setNewPath(p)
+      setAutoPath(true)
+      autoRef.current = p
+    } else if (newPath === autoRef.current) {
+      setNewPath('')
+      setAutoPath(false)
+      autoRef.current = ''
+    }
   }
 
   const pickBinary = async () => {
     const p = await window.cliExplorer.pickBinary()
-    if (p) setNewPath(p)
+    if (p) {
+      setNewPath(p)
+      setAutoPath(false)
+    }
   }
 
-  const add = async () => {
-    const name = newName.trim() || newName || 'command'
-    const path = newPath.trim()
-    if (path === '') return
-    await addEntry({ name: name || 'command', binaryPath: path, env: {} })
+  const add = async (name?: string, binaryPath?: string) => {
+    const nm = (name ?? newName).trim() || 'command'
+    const pp = (binaryPath ?? newPath).trim()
+    if (pp === '') return
+    await addEntry({ name: nm, binaryPath: pp, env: {} })
     setNewName('')
     setNewPath('')
+    setAutoPath(false)
+    autoRef.current = ''
   }
 
   const updateField = (e: CliEntry, patch: Partial<CliEntry>) => {
     void updateEntry({ ...e, ...patch })
   }
+
+  const addedNames = new Set(entries.map((e) => e.name))
+  const discovered = suggestions.filter((s) => !addedNames.has(s.name))
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -92,6 +123,26 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
             </div>
           </fieldset>
 
+          {discovered.length > 0 && (
+            <fieldset className="entry-fieldset">
+              <legend>Discovered on your PATH</legend>
+              <div className="suggest-text">Click to add — binary path is pre-filled from <code>which</code>.</div>
+              <div className="suggest-grid">
+                {discovered.map((s) => (
+                  <button
+                    key={s.name}
+                    className="suggest-chip"
+                    title={s.path}
+                    onClick={() => void add(s.name, s.path)}
+                  >
+                    <span className="suggest-name">{s.name}</span>
+                    <span className="suggest-path">{s.path}</span>
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+          )}
+
           {entries.map((e) => (
             <fieldset className="entry-fieldset" key={e.id}>
               <div className="form-row">
@@ -111,6 +162,16 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
                   value={e.binaryPath}
                   onChange={(ev) => updateField(e, { binaryPath: ev.target.value })}
                 />
+                <button
+                  className="ghost-btn"
+                  title="Resolve via which"
+                  onClick={async () => {
+                    const p = await resolveName(e.name)
+                    if (p) updateField(e, { binaryPath: p })
+                  }}
+                >
+                  Resolve
+                </button>
                 <button
                   className="ghost-btn"
                   onClick={async () => {
@@ -146,6 +207,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
                 placeholder="linkedin-jobs"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
+                onBlur={() => void onNameBlur()}
               />
             </div>
             <div className="form-row">
@@ -153,14 +215,23 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
               <input
                 type="text"
                 className="flag-input"
-                placeholder="/usr/local/bin/linkedin-jobs"
+                placeholder="auto-filled from which on name blur"
                 value={newPath}
-                onChange={(e) => setNewPath(e.target.value)}
+                onChange={(e) => {
+                  setNewPath(e.target.value)
+                  setAutoPath(false)
+                }}
               />
+              <button className="ghost-btn" title="Resolve via which" onClick={() => void onNameBlur()}>
+                Resolve
+              </button>
               <button className="ghost-btn" onClick={() => void pickBinary()}>
                 Browse
               </button>
             </div>
+            {autoPath && newPath !== '' && (
+              <div className="resolved-hint">auto-resolved via which → {newPath}</div>
+            )}
             <button className="run-btn" onClick={() => void add()} disabled={newPath.trim() === ''}>
               Add
             </button>

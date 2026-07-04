@@ -29,6 +29,7 @@
 - `run:stop` / `run:stdin` (runId[, data])
 - `dialog:pickBinary` -> path|null
 - `shell-env:status` / `shell-env:refresh` (login+interactive shell env cache)
+- `scan:resolve` (name -> path|null) / `scan:suggest` (names? -> {name,path}[])
 - `registry:list|add|update|remove`
 
 ## Environment model

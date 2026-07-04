@@ -11,6 +11,10 @@ const api: CliExplorerApi = {
     status: () => ipcRenderer.invoke('shell-env:status'),
     refresh: () => ipcRenderer.invoke('shell-env:refresh')
   },
+  scan: {
+    resolve: (name) => ipcRenderer.invoke('scan:resolve', name),
+    suggest: (names) => ipcRenderer.invoke('scan:suggest', names)
+  },
   registry: {
     list: () => ipcRenderer.invoke('registry:list'),
     add: (entry) => ipcRenderer.invoke('registry:add', entry),

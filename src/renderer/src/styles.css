@@ -623,3 +623,55 @@ body {
   font-family: 'SF Mono', Menlo, monospace;
   color: #d6d6d6;
 }
+
+.suggest-text {
+  font-size: 11px;
+  color: #9a9a9a;
+  margin-bottom: 8px;
+}
+
+.suggest-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.suggest-chip {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  background: #2e2e2f;
+  border: 1px solid #3a3a3a;
+  color: #e6e6e6;
+  border-radius: 5px;
+  padding: 6px 10px;
+  cursor: default;
+}
+
+.suggest-chip:hover {
+  background: #353536;
+  border-color: #4a7a5a;
+}
+
+.suggest-name {
+  font-weight: 600;
+  font-family: 'SF Mono', Menlo, monospace;
+}
+
+.suggest-path {
+  font-size: 11px;
+  color: #8a8a8a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 60%;
+}
+
+.resolved-hint {
+  font-size: 11px;
+  color: #9ad19a;
+  margin: -4px 0 8px;
+  word-break: break-all;
+}
