@@ -2,6 +2,7 @@ import { ipcMain, dialog, type BrowserWindow, type OpenDialogOptions } from 'ele
 import { RunManager } from './runner'
 import { Registry } from './registry'
 import { discoverTree } from './adapter'
+import { ShellEnvCache } from './shell-env'
 import type { RunRequest, CliEntry, RunEvent } from '../shared/types'
 
 export interface IpcCleanup {
@@ -10,10 +11,14 @@ export interface IpcCleanup {
 
 export function registerIpc(getWin: () => BrowserWindow | null): IpcCleanup {
   const registry = new Registry()
+  const shellEnv = new ShellEnvCache()
+  void shellEnv.refresh().catch(() => {
+    // fallback: shellEnv.current stays process.env; surfaced via shell-env:status
+  })
   const runs = new RunManager((runId, channel, payload) => {
     const evt: RunEvent = { runId, channel, payload }
     getWin()?.webContents.send('run:event', evt)
-  })
+  }, () => shellEnv.current)
 
   ipcMain.handle('cli:discover', (_e, binaryPath: string) => discoverTree(binaryPath))
 
@@ -30,6 +35,26 @@ export function registerIpc(getWin: () => BrowserWindow | null): IpcCleanup {
     const res = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
     if (res.canceled || res.filePaths.length === 0) return null
     return res.filePaths[0]
+  })
+
+  ipcMain.handle('shell-env:status', () => ({
+    ready: shellEnv.ready,
+    count: Object.keys(shellEnv.current).length,
+    error: shellEnv.error,
+    shell: shellEnv.shell
+  }))
+  ipcMain.handle('shell-env:refresh', async () => {
+    try {
+      const env = await shellEnv.refresh()
+      return { ok: true, count: Object.keys(env).length, shell: shellEnv.shell, error: null }
+    } catch (e) {
+      return {
+        ok: false,
+        count: Object.keys(shellEnv.current).length,
+        shell: shellEnv.shell,
+        error: e instanceof Error ? e.message : String(e)
+      }
+    }
   })
 
   ipcMain.handle('registry:list', () => registry.list())

@@ -50,12 +50,30 @@ export interface RunEvent {
   payload: unknown
 }
 
+export interface ShellEnvStatus {
+  ready: boolean
+  count: number
+  error: string | null
+  shell: string
+}
+
+export interface ShellEnvRefreshResult {
+  ok: boolean
+  count: number
+  error: string | null
+  shell: string
+}
+
 export interface CliExplorerApi {
   discover: (binaryPath: string) => Promise<CommandTree>
   run: (req: RunRequest) => Promise<string>
   stopRun: (runId: string) => Promise<boolean>
   writeStdin: (runId: string, data: string) => Promise<boolean>
   pickBinary: () => Promise<string | null>
+  shellEnv: {
+    status: () => Promise<ShellEnvStatus>
+    refresh: () => Promise<ShellEnvRefreshResult>
+  }
   registry: {
     list: () => Promise<CliEntry[]>
     add: (entry: Omit<CliEntry, 'id'>) => Promise<CliEntry>

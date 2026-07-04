@@ -7,6 +7,10 @@ const api: CliExplorerApi = {
   stopRun: (runId) => ipcRenderer.invoke('run:stop', runId),
   writeStdin: (runId, data) => ipcRenderer.invoke('run:stdin', runId, data),
   pickBinary: () => ipcRenderer.invoke('dialog:pickBinary'),
+  shellEnv: {
+    status: () => ipcRenderer.invoke('shell-env:status'),
+    refresh: () => ipcRenderer.invoke('shell-env:refresh')
+  },
   registry: {
     list: () => ipcRenderer.invoke('registry:list'),
     add: (entry) => ipcRenderer.invoke('registry:add', entry),

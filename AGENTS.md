@@ -27,4 +27,16 @@
 - `cli:discover` (binaryPath) -> `CommandTree`
 - `cli:run` (RunRequest) -> runId; events stream via `run:event`
 - `run:stop` / `run:stdin` (runId[, data])
+- `dialog:pickBinary` -> path|null
+- `shell-env:status` / `shell-env:refresh` (login+interactive shell env cache)
 - `registry:list|add|update|remove`
+
+## Environment model
+
+GUI apps get a minimal `launchd` env (no `~/.zshrc`). On startup the main process
+runs `ShellEnvCache.refresh()` which spawns `<SHELL> -lic` (login + interactive)
+to source `~/.zshenv`/`~/.zprofile`/`~/.zshrc` and captures the result with
+marker-delimited `/usr/bin/env`. That captured env is the base for every run
+(merged with the per-CLI `env` overrides). Actual commands still spawn with
+`shell: false` (argv array, safe). If capture fails it falls back to
+`process.env` and the error surfaces in Settings -> Shell environment.

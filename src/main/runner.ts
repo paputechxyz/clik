@@ -3,17 +3,18 @@ import { randomUUID } from 'node:crypto'
 import type { RunRequest, RunChannel } from '../shared/types'
 
 type Emitter = (runId: string, channel: RunChannel, payload: unknown) => void
+type BaseEnvProvider = () => Record<string, string>
 
 export class RunManager {
   private procs = new Map<string, ChildProcess>()
 
-  constructor(private emit: Emitter) {}
+  constructor(private emit: Emitter, private baseEnv: BaseEnvProvider = () => process.env as Record<string, string>) {}
 
   start(req: RunRequest): string {
     const runId = randomUUID()
     const child = spawn(req.binaryPath, req.argv, {
       cwd: req.cwd,
-      env: { ...process.env, ...req.env },
+      env: { ...this.baseEnv(), ...req.env },
       shell: false,
       stdio: ['pipe', 'pipe', 'pipe']
     })

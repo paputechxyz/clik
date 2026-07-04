@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import type { CliEntry } from '../../../shared/types'
+import { useEffect, useState } from 'react'
+import type { CliEntry, ShellEnvStatus } from '../../../shared/types'
 import { useAppStore } from '../store/useAppStore'
 
 function serializeEnv(env: Record<string, string>): string {
@@ -28,6 +28,19 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
 
   const [newName, setNewName] = useState('')
   const [newPath, setNewPath] = useState('')
+  const [shellStatus, setShellStatus] = useState<ShellEnvStatus | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+
+  useEffect(() => {
+    void window.cliExplorer.shellEnv.status().then(setShellStatus)
+  }, [])
+
+  const refreshShell = async () => {
+    setRefreshing(true)
+    await window.cliExplorer.shellEnv.refresh()
+    setShellStatus(await window.cliExplorer.shellEnv.status())
+    setRefreshing(false)
+  }
 
   const pickBinary = async () => {
     const p = await window.cliExplorer.pickBinary()
@@ -58,6 +71,27 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
         </header>
 
         <div className="modal-body">
+          <fieldset className="entry-fieldset">
+            <legend>Shell environment</legend>
+            <div className="shell-env-row">
+              <div className="shell-env-text">
+                Loaded from your login shell
+                {shellStatus ? (
+                  <>
+                    {' '}(<code>{shellStatus.shell}</code>) —{' '}
+                    {shellStatus.ready ? `${shellStatus.count} vars` : 'not ready'}
+                  </>
+                ) : (
+                  ' …'
+                )}
+                {shellStatus?.error && <div className="error-text">{shellStatus.error}</div>}
+              </div>
+              <button className="ghost-btn" onClick={() => void refreshShell()} disabled={refreshing}>
+                {refreshing ? 'Refreshing…' : 'Refresh'}
+              </button>
+            </div>
+          </fieldset>
+
           {entries.map((e) => (
             <fieldset className="entry-fieldset" key={e.id}>
               <div className="form-row">
