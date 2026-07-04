@@ -2,7 +2,7 @@ import { app, BrowserWindow, shell } from 'electron'
 import path from 'node:path'
 import { registerIpc, type IpcCleanup } from './ipc'
 
-process.env.APP_ROOT = path.join(__dirname, '..')
+process.env.APP_ROOT = path.join(__dirname, '..', '..')
 const PRELOAD = path.join(process.env.APP_ROOT, 'out/preload')
 const RENDERER_DIST = path.join(process.env.APP_ROOT, 'out/renderer')
 

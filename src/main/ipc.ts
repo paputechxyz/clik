@@ -1,4 +1,4 @@
-import { ipcMain, type BrowserWindow } from 'electron'
+import { ipcMain, dialog, type BrowserWindow, type OpenDialogOptions } from 'electron'
 import { RunManager } from './runner'
 import { Registry } from './registry'
 import { discoverTree } from './adapter'
@@ -20,6 +20,17 @@ export function registerIpc(getWin: () => BrowserWindow | null): IpcCleanup {
   ipcMain.handle('cli:run', (_e, req: RunRequest) => runs.start(req))
   ipcMain.handle('run:stop', (_e, runId: string) => runs.stop(runId))
   ipcMain.handle('run:stdin', (_e, runId: string, data: string) => runs.writeStdin(runId, data))
+
+  ipcMain.handle('dialog:pickBinary', async () => {
+    const win = getWin()
+    const opts: OpenDialogOptions = {
+      title: 'Choose a CLI binary',
+      properties: ['openFile']
+    }
+    const res = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
+    if (res.canceled || res.filePaths.length === 0) return null
+    return res.filePaths[0]
+  })
 
   ipcMain.handle('registry:list', () => registry.list())
   ipcMain.handle('registry:add', (_e, entry: Omit<CliEntry, 'id'>) => registry.add(entry))

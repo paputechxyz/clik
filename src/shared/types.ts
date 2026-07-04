@@ -55,6 +55,7 @@ export interface CliExplorerApi {
   run: (req: RunRequest) => Promise<string>
   stopRun: (runId: string) => Promise<boolean>
   writeStdin: (runId: string, data: string) => Promise<boolean>
+  pickBinary: () => Promise<string | null>
   registry: {
     list: () => Promise<CliEntry[]>
     add: (entry: Omit<CliEntry, 'id'>) => Promise<CliEntry>

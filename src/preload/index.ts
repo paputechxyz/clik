@@ -6,6 +6,7 @@ const api: CliExplorerApi = {
   run: (req) => ipcRenderer.invoke('cli:run', req),
   stopRun: (runId) => ipcRenderer.invoke('run:stop', runId),
   writeStdin: (runId, data) => ipcRenderer.invoke('run:stdin', runId, data),
+  pickBinary: () => ipcRenderer.invoke('dialog:pickBinary'),
   registry: {
     list: () => ipcRenderer.invoke('registry:list'),
     add: (entry) => ipcRenderer.invoke('registry:add', entry),
