@@ -1,0 +1,24 @@
+import { contextBridge, ipcRenderer } from 'electron'
+import type { CliExplorerApi } from '../shared/types'
+
+const api: CliExplorerApi = {
+  discover: (binaryPath) => ipcRenderer.invoke('cli:discover', binaryPath),
+  run: (req) => ipcRenderer.invoke('cli:run', req),
+  stopRun: (runId) => ipcRenderer.invoke('run:stop', runId),
+  writeStdin: (runId, data) => ipcRenderer.invoke('run:stdin', runId, data),
+  registry: {
+    list: () => ipcRenderer.invoke('registry:list'),
+    add: (entry) => ipcRenderer.invoke('registry:add', entry),
+    update: (entry) => ipcRenderer.invoke('registry:update', entry),
+    remove: (id) => ipcRenderer.invoke('registry:remove', id)
+  },
+  onRunEvent: (cb) => {
+    const handler = (_e: unknown, data: Parameters<typeof cb>[0]) => cb(data)
+    ipcRenderer.on('run:event', handler)
+    return () => {
+      ipcRenderer.removeListener('run:event', handler)
+    }
+  }
+}
+
+contextBridge.exposeInMainWorld('cliExplorer', api)

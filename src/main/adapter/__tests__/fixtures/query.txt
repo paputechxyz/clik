@@ -1,0 +1,15 @@
+Runs an instant SQLite FTS5 full-text query over the title, company, and
+description of every stored job — no network. Pass search terms as positional
+arguments (quoted if multi-word). Use --exclude to drop unwanted terms.
+
+Usage:
+  linkedin-jobs query <text> [flags]
+
+Flags:
+      --exclude strings   exclude terms (repeatable)
+  -h, --help              help for query
+      --limit int         max results (default 50)
+
+Global Flags:
+      --db string   path to the SQLite DB file (default: ~/linkedin-jobs/linkedin_jobs.db or $LJ_DB_PATH)
+      --json        emit machine-readable JSON (agent-native output)
