@@ -1,7 +1,7 @@
 import type { CommandNode } from '../../../shared/types'
 import { useAppStore } from '../store/useAppStore'
 import { FlagPanel } from './FlagPanel'
-import { PlusIcon } from './icons'
+import { PlusIcon, RefreshIcon } from './icons'
 
 interface Column {
   items: CommandNode[]
@@ -18,6 +18,8 @@ export function ColumnNavigator({ onAddCommand }: { onAddCommand: () => void }):
   const selection = useAppStore((s) => s.selection)
   const selectEntry = useAppStore((s) => s.selectEntry)
   const selectCommand = useAppStore((s) => s.selectCommand)
+  const refreshEntry = useAppStore((s) => s.refreshEntry)
+  const isBusy = !!selectedEntryId && (discovering || !!discoverError || !tree)
 
   const columns: Column[] = []
   if (tree) {
@@ -34,7 +36,19 @@ export function ColumnNavigator({ onAddCommand }: { onAddCommand: () => void }):
   return (
     <section className="columns">
       <div className="column">
-        <div className="column-head">Commands</div>
+        <div className="column-head with-action">
+          <span>Commands</span>
+          {selectedEntryId && (
+            <button
+              className="icon-btn small"
+              title="Re-analyze commands and flags (reload the binary)"
+              disabled={isBusy}
+              onClick={() => void refreshEntry()}
+            >
+              <RefreshIcon />
+            </button>
+          )}
+        </div>
         {entries.length === 0 && (
           <button className="add-command" onClick={onAddCommand} title="Add a CLI">
             <PlusIcon /> Add a command

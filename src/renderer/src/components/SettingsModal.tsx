@@ -25,6 +25,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
   const addEntry = useAppStore((s) => s.addEntry)
   const updateEntry = useAppStore((s) => s.updateEntry)
   const removeEntry = useAppStore((s) => s.removeEntry)
+  const refreshEntry = useAppStore((s) => s.refreshEntry)
 
   const [newName, setNewName] = useState('')
   const [newPath, setNewPath] = useState('')
@@ -193,6 +194,9 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
               </div>
               <button className="ghost-btn danger" onClick={() => void removeEntry(e.id)}>
                 Remove
+              </button>
+              <button className="ghost-btn" title="Re-run discovery on the binary" onClick={() => void refreshEntry(e.id)}>
+                Re-analyze
               </button>
             </fieldset>
           ))}

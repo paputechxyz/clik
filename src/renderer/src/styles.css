@@ -97,6 +97,22 @@ body {
   border-bottom: 1px solid #00000040;
 }
 
+.column-head.with-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.icon-btn.small {
+  width: 22px;
+  height: 22px;
+}
+
+.icon-btn:disabled {
+  opacity: 0.4;
+}
+
 .pane-empty {
   padding: 16px 12px;
   color: #7a7a7a;

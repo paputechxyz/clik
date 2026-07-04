@@ -42,6 +42,27 @@ function initFlagValue(f: Flag): unknown {
   }
 }
 
+type StoreSet = (partial: Partial<AppState> | ((s: AppState) => Partial<AppState>)) => void
+type StoreGet = () => AppState
+
+async function runDiscover(get: StoreGet, set: StoreSet, id: string): Promise<void> {
+  const entry = get().entries.find((e) => e.id === id)
+  if (!entry) return
+  set((s) => ({
+    discovering: { ...s.discovering, [id]: true },
+    discoverError: { ...s.discoverError, [id]: null }
+  }))
+  try {
+    const tree = await window.cliExplorer.discover(entry.binaryPath)
+    set((s) => ({ trees: { ...s.trees, [id]: tree }, discovering: { ...s.discovering, [id]: false } }))
+  } catch (err) {
+    set((s) => ({
+      discovering: { ...s.discovering, [id]: false },
+      discoverError: { ...s.discoverError, [id]: err instanceof Error ? err.message : String(err) }
+    }))
+  }
+}
+
 interface AppState {
   entries: CliEntry[]
   trees: Record<string, CommandTree>
@@ -59,6 +80,7 @@ interface AppState {
   updateEntry: (entry: CliEntry) => Promise<void>
   removeEntry: (id: string) => Promise<void>
   selectEntry: (id: string | null) => Promise<void>
+  refreshEntry: (id?: string) => Promise<void>
   selectCommand: (depth: number, name: string) => void
   setFlagValue: (name: string, value: unknown) => void
   setPositionalArgs: (v: string) => void
@@ -99,14 +121,12 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   async updateEntry(entry) {
     await window.cliExplorer.registry.update(entry)
-    set({ entries: get().entries.map((e) => (e.id === entry.id ? entry : e)) })
-    set((s) => ({
-      trees: entry.id === s.selectedEntryId ? {} : s.trees
-    }))
-    if (entry.id === get().selectedEntryId) {
-      delete get().trees[entry.id]
-      await get().selectEntry(entry.id)
-    }
+    set((s) => {
+      const trees = { ...s.trees }
+      delete trees[entry.id]
+      return { entries: s.entries.map((e) => (e.id === entry.id ? entry : e)), trees }
+    })
+    if (entry.id === get().selectedEntryId) await runDiscover(get, set, entry.id)
   },
 
   async removeEntry(id) {
@@ -127,18 +147,24 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
     if (!id) return
     if (get().trees[id]) return
-    const entry = get().entries.find((e) => e.id === id)
-    if (!entry) return
-    set((s) => ({ discovering: { ...s.discovering, [id]: true }, discoverError: { ...s.discoverError, [id]: null } }))
-    try {
-      const tree = await window.cliExplorer.discover(entry.binaryPath)
-      set((s) => ({ trees: { ...s.trees, [id]: tree }, discovering: { ...s.discovering, [id]: false } }))
-    } catch (err) {
-      set((s) => ({
-        discovering: { ...s.discovering, [id]: false },
-        discoverError: { ...s.discoverError, [id]: err instanceof Error ? err.message : String(err) }
-      }))
-    }
+    await runDiscover(get, set, id)
+  },
+
+  async refreshEntry(id) {
+    const targetId = id ?? get().selectedEntryId
+    if (!targetId) return
+    set((s) => {
+      const trees = { ...s.trees }
+      delete trees[targetId]
+      const patch: Partial<AppState> = { trees }
+      if (targetId === s.selectedEntryId) {
+        patch.selection = []
+        patch.flagValues = {}
+        patch.positionalArgs = ''
+      }
+      return patch
+    })
+    await runDiscover(get, set, targetId)
   },
 
   selectCommand(depth, name) {
