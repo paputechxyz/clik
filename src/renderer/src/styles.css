@@ -589,6 +589,22 @@ body {
   user-select: text;
 }
 
+.term-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 6px 8px 2px;
+  background: #1e1e1e;
+  overflow: hidden;
+}
+
+.term-host .xterm {
+  height: 100%;
+}
+
+.term-host .xterm-viewport {
+  background-color: #1e1e1e !important;
+}
+
 .stdin-row {
   display: flex;
   align-items: center;

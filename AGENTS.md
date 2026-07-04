@@ -32,6 +32,16 @@
 - `scan:resolve` (name -> path|null) / `scan:suggest` (names? -> {name,path}[])
 - `registry:list|add|update|remove`
 
+## Run output
+
+Per-run output renders in a real terminal emulator (`@xterm/xterm` +
+`@xterm/addon-fit`) via `TerminalView`, so ANSI colors, cursor movement,
+carriage-return/line-overwrite and clears all render correctly. Output is
+delta-written from the store's accumulated string; if the head is trimmed by
+the MAX_OUTPUT cap (length shrinks) the terminal resets and rewrites. Output is
+pipe-based (no PTY), so the line-based stdin box in the run pane remains the
+input surface; raw-mode TUIs are a future PTY follow-up.
+
 ## Environment model
 
 GUI apps get a minimal `launchd` env (no `~/.zshrc`). On startup the main process
