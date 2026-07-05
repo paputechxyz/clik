@@ -72,12 +72,6 @@ export function RunTabs({ onCollapse }: RunTabsProps): JSX.Element {
 function RunPane({ run }: { run: Run }): JSX.Element {
   return (
     <div className="run-pane">
-      <div className="run-meta">
-        <code className="cmd-preview small">{run.preview}</code>
-        <span className={`status-tag status-${run.status}`}>
-          {run.status === 'exited' ? `exited ${run.code ?? ''}`.trim() : run.status}
-        </span>
-      </div>
       <TerminalView run={run} />
     </div>
   )

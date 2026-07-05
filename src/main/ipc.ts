@@ -2,11 +2,11 @@ import { ipcMain, dialog } from 'electron'
 import os from 'node:os'
 import type { BrowserWindow, OpenDialogOptions } from 'electron'
 import { Registry } from './registry'
-import { discoverTree } from './adapter'
+import { discoverTree, discoverCommand } from './adapter'
 import { ShellEnvCache } from './shell-env'
 import { resolveOnPath, scanCandidates, DEFAULT_CANDIDATES } from './scanner'
 import { PtyManager } from './pty'
-import type { CliEntry, PtyEvent, PtyOpenRequest } from '../shared/types'
+import type { CliEntry, CommandNode, PtyEvent, PtyOpenRequest } from '../shared/types'
 
 export interface IpcCleanup {
   stopAll: () => void
@@ -24,6 +24,9 @@ export function registerIpc(getWin: () => BrowserWindow | null): IpcCleanup {
   }, () => shellEnv.current)
 
   ipcMain.handle('cli:discover', (_e, binaryPath: string) => discoverTree(binaryPath))
+  ipcMain.handle('cli:discover-command', (_e, binaryPath: string, cmdPath: string[]): Promise<CommandNode> =>
+    discoverCommand(binaryPath, cmdPath)
+  )
 
   ipcMain.handle('dialog:pickBinary', async () => {
     const win = getWin()

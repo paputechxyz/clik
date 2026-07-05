@@ -5,7 +5,7 @@ import type { CliAdapter } from './types'
 
 const HEADER_RE = /^([A-Z][A-Za-z]+(?:\s[A-Za-z]+)?):\s*$/
 const FLAG_RE = /^\s+(-(\w),\s+)?--([\w-]+)(?:\s+(\S+))?\s{2,}(.*)$/
-const CHILD_RE = /^\s{2,}([A-Za-z0-9][\w-]*)\s{2,}(.*)$/
+const CHILD_RE = /^\s{2,}([A-Za-z0-9][\w-]*)\s+(.*)$/
 const SKIP_CHILDREN = new Set(['help', 'completion'])
 const MAX_DEPTH = 6
 
@@ -192,6 +192,10 @@ async function buildNode(
 export async function discoverTree(binaryPath: string): Promise<CommandTree> {
   const root = await buildNode(binaryPath, [], '')
   return { binaryPath, binaryName: path.basename(binaryPath), root }
+}
+
+export async function discoverCommand(binaryPath: string, cmdPath: string[]): Promise<CommandNode> {
+  return buildNode(binaryPath, cmdPath, '', 0)
 }
 
 export const cobraAdapter: CliAdapter = { name: 'cobra', discover: discoverTree }

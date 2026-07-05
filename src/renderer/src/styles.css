@@ -548,6 +548,253 @@ body {
   opacity: 0.4;
 }
 
+/* flag footer actions (Save + Run) */
+.flag-footer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.flag-footer-actions .save-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+/* library column (Saved + History) */
+.library-column {
+  flex: 0 0 220px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  border-right: 1px solid #00000040;
+  background: #232324;
+  overflow: hidden;
+}
+
+.library-column.collapsed {
+  flex: 0 0 22px !important;
+  align-items: center;
+  padding: 4px 0;
+  gap: 8px;
+}
+
+.lib-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.lib-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.lib-panel + .resizer {
+  flex: 0 0 6px;
+}
+
+.lib-panel.collapsed {
+  flex: 0 0 26px !important;
+}
+
+.lib-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border-bottom: 1px solid #00000040;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.lib-panel.collapsed .lib-head {
+  border-bottom: none;
+}
+
+.lib-head-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  color: #cfcfcf;
+  cursor: default;
+  font: inherit;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.lib-head-toggle:hover {
+  background: #ffffff14;
+}
+
+.lib-head-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #9a9a9a;
+}
+
+.lib-head-count {
+  font-size: 10px;
+  color: #8a8a8a;
+  background: #ffffff14;
+  border-radius: 8px;
+  padding: 0 6px;
+  line-height: 14px;
+}
+
+.lib-head-note {
+  font-size: 10px;
+  color: #6a6a6a;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.lib-head-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: #9a9a9a;
+  border-radius: 4px;
+  cursor: default;
+}
+
+.lib-head-action:hover {
+  background: #ffffff14;
+  color: #ff8a80;
+}
+
+.lib-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.lib-empty {
+  padding: 12px 10px;
+  color: #6a6a6a;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.lib-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  overflow: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.lib-item {
+  display: flex;
+  align-items: stretch;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.lib-item:hover {
+  background: #ffffff10;
+}
+
+.lib-item-main {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 6px 8px;
+  background: transparent;
+  border: none;
+  color: #e6e6e6;
+  text-align: left;
+  cursor: default;
+  font: inherit;
+  min-width: 0;
+}
+
+.lib-item-name {
+  font-weight: 600;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.lib-item-preview {
+  font-family: 'SF Mono', Menlo, monospace;
+  font-size: 10.5px;
+  color: #9ad19a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.lib-item-time {
+  font-size: 10.5px;
+  color: #8a8a8a;
+  font-family: 'SF Mono', Menlo, monospace;
+}
+
+.lib-item-x {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  background: transparent;
+  border: none;
+  color: #6a6a6a;
+  cursor: default;
+  opacity: 0;
+}
+
+.lib-item:hover .lib-item-x {
+  opacity: 1;
+}
+
+.lib-item-x:hover {
+  color: #ff8a80;
+}
+
+/* import command input (CLI panel) */
+.import-input-wrap {
+  padding: 8px 10px;
+  border-bottom: 1px solid #00000040;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.import-input {
+  width: 100%;
+  font-family: 'SF Mono', Menlo, monospace;
+  font-size: 11px;
+}
+
+.import-input-hint {
+  font-size: 10px;
+  color: #6a6a6a;
+}
+
 /* settings modal */
 .modal-overlay {
   position: fixed;
@@ -779,7 +1026,7 @@ body {
 .term-host {
   flex: 1 1 auto;
   min-height: 0;
-  padding: 6px 8px 2px;
+  padding: 6px 8px 12px;
   background: #1e1e1e;
   overflow: hidden;
 }

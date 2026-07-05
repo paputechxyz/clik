@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { CommandTree, CommandNode, Flag, CliEntry, PtyEvent } from '../../../shared/types'
 import { buildArgv, commandPreview, shellQuote, shellSplit } from '../lib/buildArgv'
+import { parseCommandTokens } from '../lib/parseCommand'
 
 export type RunStatus = 'running' | 'exited'
 export type RunMode = 'shell' | 'command'
@@ -16,10 +17,37 @@ export interface Run {
   startedAt: number
 }
 
+export interface SavedCommandItem {
+  id: string
+  name: string
+  entryId: string
+  entryName: string
+  binaryName: string
+  selection: string[]
+  flags: Record<string, unknown>
+  positional: string
+  preview: string
+  createdAt: number
+}
+
+export interface HistoryItem {
+  id: string
+  entryId: string
+  entryName: string
+  binaryName: string
+  selection: string[]
+  flags: Record<string, unknown>
+  positional: string
+  preview: string
+  createdAt: number
+}
+
 const MAX_OUTPUT = 1_000_000
+const MAX_HISTORY = 200
 
 // ---- Flag persistence (Task 5) -------------------------------------------
 const PERSIST_KEY = 'cli-explorer-session-v1'
+const LIBRARY_KEY = 'cli-explorer-library-v1'
 
 interface SavedCommand {
   flags: Record<string, unknown>
@@ -29,6 +57,11 @@ interface PersistedSession {
   selectedEntryId: string | null
   selections: Record<string, string[]> // entryId -> command path
   commands: Record<string, SavedCommand> // `${entryId}::${path.join('/')}` -> values
+}
+
+interface PersistedLibrary {
+  saved: SavedCommandItem[]
+  history: HistoryItem[]
 }
 
 function commandKey(entryId: string, selection: string[]): string {
@@ -48,6 +81,28 @@ function loadPersisted(): Partial<PersistedSession> | null {
 function savePersisted(s: PersistedSession): void {
   try {
     localStorage.setItem(PERSIST_KEY, JSON.stringify(s))
+  } catch {
+    // ignore
+  }
+}
+
+function loadLibrary(): { saved: SavedCommandItem[]; history: HistoryItem[] } {
+  try {
+    const raw = localStorage.getItem(LIBRARY_KEY)
+    if (!raw) return { saved: [], history: [] }
+    const parsed = JSON.parse(raw) as Partial<PersistedLibrary>
+    return {
+      saved: Array.isArray(parsed.saved) ? parsed.saved : [],
+      history: Array.isArray(parsed.history) ? parsed.history : []
+    }
+  } catch {
+    return { saved: [], history: [] }
+  }
+}
+
+function saveLibrary(saved: SavedCommandItem[], history: HistoryItem[]): void {
+  try {
+    localStorage.setItem(LIBRARY_KEY, JSON.stringify({ saved, history }))
   } catch {
     // ignore
   }
@@ -128,6 +183,10 @@ interface AppState {
   selections: Record<string, string[]>
   commands: Record<string, SavedCommand>
 
+  // library (saved + history)
+  saved: SavedCommandItem[]
+  history: HistoryItem[]
+
   loadEntries: () => Promise<void>
   addEntry: (entry: Omit<CliEntry, 'id'>) => Promise<void>
   updateEntry: (entry: CliEntry) => Promise<void>
@@ -142,9 +201,20 @@ interface AppState {
   closeRun: (id: string) => Promise<void>
   setActiveRun: (id: string) => void
   handlePtyEvent: (e: PtyEvent) => void
+  saveCurrentCommand: () => void
+  removeSaved: (id: string) => void
+  clearHistory: () => void
+  loadCommand: (item: {
+    entryId: string
+    selection: string[]
+    flags: Record<string, unknown>
+    positional: string
+  }) => Promise<void>
+  importCommandString: (text: string) => Promise<void>
 }
 
 const persisted = loadPersisted()
+const libraryInitial = loadLibrary()
 
 export const useAppStore = create<AppState>((set, get) => ({
   entries: [],
@@ -160,6 +230,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   activeRunId: null,
   selections: persisted?.selections ?? {},
   commands: persisted?.commands ?? {},
+  saved: libraryInitial.saved,
+  history: libraryInitial.history,
 
   async loadEntries() {
     const entries = await window.cliExplorer.registry.list()
@@ -203,7 +275,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => {
       const selections = { ...s.selections }
       delete selections[id]
-      return { entries, selections }
+      const saved = s.saved.filter((it) => it.entryId !== id)
+      const history = s.history.filter((it) => it.entryId !== id)
+      saveLibrary(saved, history)
+      return { entries, selections, saved, history }
     })
     if (get().selectedEntryId === id) {
       await get().selectEntry(entries.length > 0 ? entries[0].id : null)
@@ -306,6 +381,23 @@ export const useAppStore = create<AppState>((set, get) => ({
           : r
       )
     })
+
+    const historyItem: HistoryItem = {
+      id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+      entryId: selectedEntryId,
+      entryName: entry.name,
+      binaryName: tree.binaryName,
+      selection: [...selection],
+      flags: { ...flagValues },
+      positional: positionalArgs,
+      preview,
+      createdAt: Date.now()
+    }
+    set((s) => {
+      const history = [historyItem, ...s.history].slice(0, MAX_HISTORY)
+      saveLibrary(s.saved, history)
+      return { history }
+    })
   },
 
   async openShellTab() {
@@ -337,6 +429,193 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setActiveRun(id) {
     set({ activeRunId: id })
+  },
+
+  saveCurrentCommand() {
+    const { selectedEntryId, trees, selection, flagValues, positionalArgs, entries } = get()
+    if (!selectedEntryId || selection.length === 0) return
+    const entry = entries.find((e) => e.id === selectedEntryId)
+    const tree = trees[selectedEntryId]
+    if (!entry || !tree) return
+    const node = findNode(tree, selection)
+    if (!node || node.isGroup) return
+    const argv = buildArgv({
+      commandPath: selection,
+      flags: [...node.flags, ...node.inheritedFlags],
+      values: flagValues,
+      positionalArgs: shellSplit(positionalArgs)
+    })
+    const preview = commandPreview(tree.binaryName, argv)
+    const name = [tree.binaryName, ...selection].join(' ').trim()
+    const item: SavedCommandItem = {
+      id:
+        typeof crypto !== 'undefined' && 'randomUUID' in crypto
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random()}`,
+      name,
+      entryId: selectedEntryId,
+      entryName: entry.name,
+      binaryName: tree.binaryName,
+      selection: [...selection],
+      flags: { ...flagValues },
+      positional: positionalArgs,
+      preview,
+      createdAt: Date.now()
+    }
+    set((s) => {
+      // dedupe by entryId + selection, keeping the newest snapshot
+      const filtered = s.saved.filter(
+        (it) => !(it.entryId === item.entryId && it.selection.join('/') === item.selection.join('/'))
+      )
+      const saved = [item, ...filtered].sort((a, b) => a.name.localeCompare(b.name))
+      saveLibrary(saved, s.history)
+      return { saved }
+    })
+  },
+
+  removeSaved(id) {
+    set((s) => {
+      const saved = s.saved.filter((it) => it.id !== id)
+      saveLibrary(saved, s.history)
+      return { saved }
+    })
+  },
+
+  clearHistory() {
+    set((s) => {
+      saveLibrary(s.saved, [])
+      return { history: [] }
+    })
+  },
+
+  async loadCommand(item) {
+    const { entries } = get()
+    const entry = entries.find((e) => e.id === item.entryId)
+    if (!entry) return
+    if (get().selectedEntryId !== item.entryId) {
+      await get().selectEntry(item.entryId)
+    }
+    const tree = get().trees[item.entryId]
+    if (!tree) return
+    const node = findNode(tree, item.selection)
+    if (!node) return
+    set({ selection: [...item.selection] })
+    // Restore the snapshot's flags + positional, filtered to known flags on the
+    // current node so removed flags don't linger.
+    const known = new Set([...node.flags, ...node.inheritedFlags].map((f) => f.name))
+    const restoredFlags: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(item.flags)) {
+      if (known.has(k)) restoredFlags[k] = v
+    }
+    for (const f of [...node.flags, ...node.inheritedFlags]) {
+      if (!(f.name in restoredFlags)) restoredFlags[f.name] = initFlagValue(f)
+    }
+    set({ flagValues: restoredFlags, positionalArgs: item.positional })
+    persistSelection()
+    persistCurrentCommand()
+  },
+
+  async importCommandString(text) {
+    console.log('[import] start, text=', JSON.stringify(text))
+    const trimmed = text.trim()
+    if (trimmed === '') {
+      console.log('[import] empty input, abort')
+      return
+    }
+    const tokens = shellSplit(trimmed)
+    console.log('[import] tokens=', tokens)
+    if (tokens.length === 0) {
+      console.log('[import] no tokens after split, abort')
+      return
+    }
+    const { entries, selectedEntryId, trees } = get()
+    console.log('[import] entries=', entries.map((e) => ({ id: e.id, name: e.name, binaryPath: e.binaryPath, binaryName: trees[e.id]?.binaryName })))
+    console.log('[import] selectedEntryId=', selectedEntryId)
+
+    // The first token may be a binary name. Try to match a registered CLI by
+    // entry name, basename of binaryPath, or the discovered tree's binaryName.
+    const firstTok = tokens[0]
+    const baseName = (p: string): string => p.split('/').pop() ?? p
+    const matched =
+      entries.find((e) => e.name === firstTok) ??
+      entries.find((e) => baseName(e.binaryPath) === firstTok) ??
+      entries.find((e) => trees[e.id]?.binaryName === firstTok)
+    console.log('[import] firstTok=', firstTok, 'matched=', matched ? matched.id : null)
+
+    let entryId: string
+    let rest: string[]
+    if (matched) {
+      entryId = matched.id
+      rest = tokens.slice(1)
+    } else {
+      if (!selectedEntryId) {
+        console.log('[import] no match and no selected entry, abort')
+        return
+      }
+      entryId = selectedEntryId
+      rest = tokens
+      // If the first token isn't a flag and isn't a subcommand of the current
+      // tree, assume it's the binary name and drop it so the parse succeeds.
+      const currentTree = trees[selectedEntryId]
+      if (currentTree && rest.length > 0 && !rest[0].startsWith('-')) {
+        const isChild = currentTree.root.children.some((c) => c.name === rest[0])
+        console.log('[import] fallback: isChild of root for', rest[0], '→', isChild)
+        if (!isChild) rest = rest.slice(1)
+      }
+    }
+    console.log('[import] entryId=', entryId, 'rest=', rest)
+
+    if (get().selectedEntryId !== entryId) {
+      await get().selectEntry(entryId)
+    }
+    const entry = get().entries.find((e) => e.id === entryId)
+    let tree = get().trees[entryId]
+    if (!tree || !entry) {
+      console.log('[import] no tree for entry, abort')
+      return
+    }
+
+    // The command path is the leading non-flag tokens. If it isn't in the tree
+    // (e.g. a hidden cobra command that --help doesn't list), discover it on
+    // demand by running `<binary> <path> --help` and graft it in.
+    const cmdPath: string[] = []
+    for (const t of rest) {
+      if (t.startsWith('-')) break
+      cmdPath.push(t)
+    }
+    console.log('[import] candidate cmdPath=', cmdPath)
+
+    if (cmdPath.length > 0 && !findNode(tree, cmdPath)) {
+      console.log('[import] cmdPath not in tree — discovering on demand:', cmdPath)
+      try {
+        const discovered = await window.cliExplorer.discoverCommand(entry.binaryPath, cmdPath)
+        console.log('[import] discovered node=', discovered.name, 'isGroup=', discovered.isGroup, 'flags=', discovered.flags.map((f) => `${f.name}:${f.type}`))
+        tree = graftIntoTree(tree, cmdPath, discovered)
+        set((s) => ({ trees: { ...s.trees, [entryId]: tree! } }))
+      } catch (err) {
+        console.error('[import] on-demand discovery failed', err)
+      }
+    }
+
+    const parsed = parseCommandTokens(rest, tree)
+    console.log('[import] parsed=', { selection: parsed.selection, flags: parsed.flags, positional: parsed.positional })
+    const node = findNode(tree, parsed.selection)
+    if (!node) {
+      console.log('[import] findNode returned null for selection', parsed.selection, '→ abort')
+      return
+    }
+    console.log('[import] resolved node=', node.name, 'isGroup=', node.isGroup, 'flags=', node.flags.map((f) => `${f.name}:${f.type}`))
+
+    // start from defaults so unspecified flags keep their default values, then
+    // overlay the parsed values.
+    const flagValues = buildFlagValues(node, undefined)
+    for (const [k, v] of Object.entries(parsed.flags)) {
+      flagValues[k] = v
+    }
+    set({ selection: parsed.selection, flagValues, positionalArgs: parsed.positional.join(' ') })
+    persistSelection()
+    persistCurrentCommand()
+    console.log('[import] done, applied selection + flags')
   },
 
   handlePtyEvent(e) {
@@ -410,4 +689,24 @@ function snapshot(s: AppState): PersistedSession {
     selections: s.selections,
     commands: s.commands
   }
+}
+
+// Returns a new CommandTree with `node` grafted at `cmdPath` (immutably, so
+// selectors re-render). If the path already exists, the tree is returned as-is.
+function graftIntoTree(tree: CommandTree, cmdPath: string[], node: CommandNode): CommandTree {
+  if (cmdPath.length === 0) return tree
+  const newRoot = { ...tree.root, children: [...tree.root.children] }
+  let parent = newRoot
+  for (let i = 0; i < cmdPath.length - 1; i++) {
+    const seg = cmdPath[i]
+    const idx = parent.children.findIndex((c) => c.name === seg)
+    if (idx === -1) return tree // parent path missing; can't graft
+    const cloned = { ...parent.children[idx], children: [...parent.children[idx].children] }
+    parent.children[idx] = cloned
+    parent = cloned
+  }
+  const leafName = cmdPath[cmdPath.length - 1]
+  if (parent.children.some((c) => c.name === leafName)) return tree
+  parent.children.push(node)
+  return { ...tree, root: newRoot }
 }
