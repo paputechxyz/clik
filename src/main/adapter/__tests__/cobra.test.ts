@@ -25,6 +25,12 @@ describe('parseHelp - root (group)', () => {
     expect(names).toContain('serve')
     expect(names).toContain('config')
     expect(names).toContain('score-job')
+    // `recommended` is the longest-named command; cobra pads command names to
+    // the longest width, leaving only a single space before its description.
+    // The parser must still pick it up.
+    expect(names).toContain('recommended')
+    const recommended = p.children.find((c) => c.name === 'recommended')!
+    expect(recommended.short).toContain('personalized LinkedIn')
     const search = p.children.find((c) => c.name === 'search')!
     expect(search.short).toBe("Search LinkedIn's public job board (anonymous, no session required)")
   })

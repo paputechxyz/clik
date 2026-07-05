@@ -3,6 +3,7 @@ import type { CliExplorerApi } from '../shared/types'
 
 const api: CliExplorerApi = {
   discover: (binaryPath) => ipcRenderer.invoke('cli:discover', binaryPath),
+  discoverCommand: (binaryPath, cmdPath) => ipcRenderer.invoke('cli:discover-command', binaryPath, cmdPath),
   pickBinary: () => ipcRenderer.invoke('dialog:pickBinary'),
   shellEnv: {
     status: () => ipcRenderer.invoke('shell-env:status'),

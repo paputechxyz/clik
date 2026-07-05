@@ -2,6 +2,7 @@ import type { CommandNode } from '../../../shared/types'
 import { useAppStore } from '../store/useAppStore'
 import { buildArgv, commandPreview, shellSplit } from '../lib/buildArgv'
 import { FlagField } from './FlagWidgets'
+import { BookmarkIcon } from './icons'
 
 export function FlagPanel(): JSX.Element {
   const selectedEntryId = useAppStore((s) => s.selectedEntryId)
@@ -12,6 +13,7 @@ export function FlagPanel(): JSX.Element {
   const setFlagValue = useAppStore((s) => s.setFlagValue)
   const setPositionalArgs = useAppStore((s) => s.setPositionalArgs)
   const runCommand = useAppStore((s) => s.runCommand)
+  const saveCurrentCommand = useAppStore((s) => s.saveCurrentCommand)
 
   if (!tree) {
     return <EmptyFlags text="No command selected." />
@@ -75,9 +77,18 @@ export function FlagPanel(): JSX.Element {
 
       <div className="flag-footer">
         <code className="cmd-preview">{preview}</code>
-        <button className="run-btn" onClick={() => void runCommand()}>
-          Run
-        </button>
+        <div className="flag-footer-actions">
+          <button
+            className="ghost-btn save-btn"
+            title="Save this command (with current flags) to the Saved panel"
+            onClick={() => saveCurrentCommand()}
+          >
+            <BookmarkIcon /> Save
+          </button>
+          <button className="run-btn" onClick={() => void runCommand()}>
+            Run
+          </button>
+        </div>
       </div>
     </>
   )

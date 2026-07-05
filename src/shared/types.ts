@@ -80,6 +80,7 @@ export type MenuAction = 'new-tab' | 'close-tab'
 
 export interface CliExplorerApi {
   discover: (binaryPath: string) => Promise<CommandTree>
+  discoverCommand: (binaryPath: string, cmdPath: string[]) => Promise<CommandNode>
   pickBinary: () => Promise<string | null>
   shellEnv: {
     status: () => Promise<ShellEnvStatus>

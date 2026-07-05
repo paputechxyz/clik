@@ -1,7 +1,7 @@
 import { discoverTree } from './cobra'
 import type { CliAdapter } from './types'
 
-export { discoverTree, parseHelp, cobraAdapter } from './cobra'
+export { discoverTree, discoverCommand, parseHelp, cobraAdapter } from './cobra'
 export type { CliAdapter } from './types'
 export type { ParsedHelp } from './cobra'
 

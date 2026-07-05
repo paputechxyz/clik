@@ -3,8 +3,9 @@ import type { CommandNode } from '../../../shared/types'
 import { useAppStore } from '../store/useAppStore'
 import { useLayoutStore } from '../store/useLayoutStore'
 import { FlagPanel } from './FlagPanel'
+import { LibraryColumn } from './LibraryColumn'
 import { Resizer } from './Resizer'
-import { ChevronLeftIcon, ChevronRightIcon, PlusIcon, RefreshIcon } from './icons'
+import { ChevronLeftIcon, ChevronRightIcon, ImportIcon, PlusIcon, RefreshIcon } from './icons'
 
 interface Column {
   items: CommandNode[]
@@ -22,10 +23,12 @@ export function ColumnNavigator({ onAddCommand }: { onAddCommand: () => void }):
   const selectEntry = useAppStore((s) => s.selectEntry)
   const selectCommand = useAppStore((s) => s.selectCommand)
   const refreshEntry = useAppStore((s) => s.refreshEntry)
+  const importCommandString = useAppStore((s) => s.importCommandString)
   const isBusy = !!selectedEntryId && (discovering || !!discoverError || !tree)
 
   const sectionRef = useRef<HTMLDivElement>(null)
   const [sectionWidth, setSectionWidth] = useState(0)
+  const [importOpen, setImportOpen] = useState(false)
 
   useEffect(() => {
     const el = sectionRef.current
@@ -53,19 +56,43 @@ export function ColumnNavigator({ onAddCommand }: { onAddCommand: () => void }):
 
   panels.push({
     key: 'entries',
-    title: 'Commands',
+    title: 'CLI',
     headerActions: selectedEntryId ? (
-      <button
-        className="icon-btn small"
-        title="Re-analyze commands and flags (reload the binary)"
-        disabled={isBusy}
-        onClick={() => void refreshEntry()}
-      >
-        <RefreshIcon />
-      </button>
+      <span className="column-head-actions">
+        <button
+          className="icon-btn small"
+          title="Import a command string (parses flags into the UI)"
+          onClick={() => setImportOpen((v) => !v)}
+        >
+          <ImportIcon />
+        </button>
+        <button
+          className="icon-btn small"
+          title="Re-analyze commands and flags (reload the binary)"
+          disabled={isBusy}
+          onClick={() => void refreshEntry()}
+        >
+          <RefreshIcon />
+        </button>
+      </span>
     ) : null,
     body: (
       <>
+        {importOpen && (
+          <ImportInput
+            onClose={() => setImportOpen(false)}
+            onSubmit={async (text) => {
+              console.log('[import] Enter pressed, text=', JSON.stringify(text))
+              try {
+                await importCommandString(text)
+                console.log('[import] importCommandString returned')
+              } catch (err) {
+                console.error('[import] importCommandString threw', err)
+              }
+              setImportOpen(false)
+            }}
+          />
+        )}
         {entries.length === 0 && (
           <button className="add-command" onClick={onAddCommand} title="Add a CLI">
             <PlusIcon /> Add a command
@@ -165,32 +192,38 @@ export function ColumnNavigator({ onAddCommand }: { onAddCommand: () => void }):
     syncColumnCount(count)
   }, [count, syncColumnCount])
 
+  const children: JSX.Element[] = []
+  panels.forEach((p, i) => {
+    children.push(
+      <ColumnPanel
+        key={p.key}
+        index={i}
+        title={p.title}
+        muted={p.muted}
+        details={p.details}
+        headerActions={p.headerActions}
+      >
+        {p.body}
+      </ColumnPanel>
+    )
+    // interleave a resizer after this panel unless it's the last, or either
+    // neighbour is collapsed (fixed-width sliver).
+    if (i < panels.length - 1 && !columnCollapsed[i] && !columnCollapsed[i + 1]) {
+      children.push(
+        <Resizer
+          key={`r-${i}`}
+          orientation="vertical"
+          title="Drag to resize · collapse with the chevron"
+          onDrag={(d) => sectionWidth > 0 && dragColumnResizer(i, sectionWidth, d)}
+        />
+      )
+    }
+  })
+
   return (
     <section className="columns" ref={sectionRef}>
-      {panels.map((p, i) => (
-        <ColumnPanel
-          key={p.key}
-          index={i}
-          title={p.title}
-          muted={p.muted}
-          details={p.details}
-          headerActions={p.headerActions}
-        >
-          {p.body}
-        </ColumnPanel>
-      ))}
-      {panels.slice(0, -1).map((_, i) => {
-        // skip the resizer when either neighbour is collapsed (fixed-width sliver)
-        if (columnCollapsed[i] || columnCollapsed[i + 1]) return null
-        return (
-          <Resizer
-            key={`r-${i}`}
-            orientation="vertical"
-            title="Drag to resize · collapse with the chevron"
-            onDrag={(d) => sectionWidth > 0 && dragColumnResizer(i, sectionWidth, d)}
-          />
-        )
-      })}
+      <LibraryColumn />
+      {children}
     </section>
   )
 }
@@ -246,6 +279,42 @@ function ColumnPanel({ index, title, muted, details, headerActions, children }: 
         </span>
       </div>
       <div className="column-body">{children}</div>
+    </div>
+  )
+}
+
+function ImportInput({
+  onSubmit,
+  onClose
+}: {
+  onSubmit: (text: string) => void | Promise<void>
+  onClose: () => void
+}): JSX.Element {
+  const [value, setValue] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    inputRef.current?.focus()
+  }, [])
+  return (
+    <div className="import-input-wrap">
+      <input
+        ref={inputRef}
+        className="flag-input import-input"
+        type="text"
+        placeholder="Paste a command, e.g. mycli sub --flag value"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            if (value.trim() !== '') void onSubmit(value)
+          } else if (e.key === 'Escape') {
+            e.preventDefault()
+            onClose()
+          }
+        }}
+      />
+      <div className="import-input-hint">Enter to apply · Esc to close</div>
     </div>
   )
 }
