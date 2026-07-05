@@ -1,18 +1,18 @@
 import { create } from 'zustand'
-import type { CommandTree, CommandNode, Flag, CliEntry, RunEvent } from '../../../shared/types'
-import { buildArgv, shellSplit } from '../lib/buildArgv'
+import type { CommandTree, CommandNode, Flag, CliEntry, PtyEvent } from '../../../shared/types'
+import { buildArgv, commandPreview, shellSplit } from '../lib/buildArgv'
 
-export type RunStatus = 'running' | 'exited' | 'error'
+export type RunStatus = 'running' | 'exited'
+export type RunMode = 'shell' | 'command'
 
 export interface Run {
   id: string
   title: string
-  binaryName: string
-  binaryPath: string
-  argv: string[]
+  preview: string
+  mode: RunMode
+  output: string
   status: RunStatus
   code: number | null
-  output: string
   startedAt: number
 }
 
@@ -72,6 +72,7 @@ interface AppState {
   selection: string[]
   flagValues: Record<string, unknown>
   positionalArgs: string
+  shellName: string
   runs: Run[]
   activeRunId: string | null
 
@@ -85,11 +86,11 @@ interface AppState {
   setFlagValue: (name: string, value: unknown) => void
   setPositionalArgs: (v: string) => void
   runCommand: () => Promise<void>
+  openShellTab: () => Promise<void>
   stopRun: (id: string) => Promise<void>
   closeRun: (id: string) => Promise<void>
   setActiveRun: (id: string) => void
-  writeStdin: (id: string, text: string) => Promise<void>
-  handleRunEvent: (e: RunEvent) => void
+  handlePtyEvent: (e: PtyEvent) => void
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -101,12 +102,20 @@ export const useAppStore = create<AppState>((set, get) => ({
   selection: [],
   flagValues: {},
   positionalArgs: '',
+  shellName: '',
   runs: [],
   activeRunId: null,
 
   async loadEntries() {
     const entries = await window.cliExplorer.registry.list()
-    set({ entries })
+    let shellName = ''
+    try {
+      const status = await window.cliExplorer.shellEnv.status()
+      shellName = status.shell
+    } catch {
+      shellName = ''
+    }
+    set({ entries, shellName })
     const { selectedEntryId } = get()
     if (!selectedEntryId && entries.length > 0) {
       await get().selectEntry(entries[0].id)
@@ -208,32 +217,48 @@ export const useAppStore = create<AppState>((set, get) => ({
       values: flagValues,
       positionalArgs: shellSplit(positionalArgs)
     })
-    const runId = await window.cliExplorer.run({ binaryPath: entry.binaryPath, argv, env: entry.env })
+    const id = await window.cliExplorer.pty.open({ file: entry.binaryPath, args: argv, env: entry.env })
     const run: Run = {
-      id: runId,
+      id,
       title: [tree.binaryName, ...selection].join(' '),
-      binaryName: tree.binaryName,
-      binaryPath: entry.binaryPath,
-      argv,
+      preview: commandPreview(tree.binaryName, argv),
+      mode: 'command',
+      output: '',
       status: 'running',
       code: null,
-      output: '',
       startedAt: Date.now()
     }
-    set((s) => ({ runs: [...s.runs, run], activeRunId: runId }))
+    set((s) => ({ runs: [...s.runs, run], activeRunId: id }))
+  },
+
+  async openShellTab() {
+    const id = await window.cliExplorer.pty.openShell()
+    const name = get().shellName || 'shell'
+    const run: Run = {
+      id,
+      title: name,
+      preview: `${name} (login shell)`,
+      mode: 'shell',
+      output: '',
+      status: 'running',
+      code: null,
+      startedAt: Date.now()
+    }
+    set((s) => ({ runs: [...s.runs, run], activeRunId: id }))
   },
 
   async stopRun(id) {
-    await window.cliExplorer.stopRun(id)
+    await window.cliExplorer.pty.kill(id)
   },
 
   async closeRun(id) {
     const run = get().runs.find((r) => r.id === id)
-    if (run && run.status === 'running') await window.cliExplorer.stopRun(id)
+    if (run && run.status === 'running') await window.cliExplorer.pty.kill(id)
     const runs = get().runs.filter((r) => r.id !== id)
     set({
       runs,
-      activeRunId: get().activeRunId === id ? (runs.length > 0 ? runs[runs.length - 1].id : null) : get().activeRunId
+      activeRunId:
+        get().activeRunId === id ? (runs.length > 0 ? runs[runs.length - 1].id : null) : get().activeRunId
     })
   },
 
@@ -241,34 +266,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ activeRunId: id })
   },
 
-  async writeStdin(id, text) {
-    await window.cliExplorer.writeStdin(id, text)
-    set((s) => ({
-      runs: s.runs.map((r) => (r.id === id ? { ...r, output: (r.output + text).slice(-MAX_OUTPUT) } : r))
-    }))
-  },
-
-  handleRunEvent(e) {
+  handlePtyEvent(e) {
     set((s) => ({
       runs: s.runs.map((r) => {
-        if (r.id !== e.runId) return r
-        if (e.channel === 'stdout' || e.channel === 'stderr') {
+        if (r.id !== e.id) return r
+        if (e.channel === 'data') {
           const chunk = typeof e.payload === 'string' ? e.payload : ''
           return { ...r, output: (r.output + chunk).slice(-MAX_OUTPUT) }
         }
-        if (e.channel === 'error') {
-          const p = e.payload as { message?: string }
-          return { ...r, status: 'error', output: (r.output + `\n[error] ${p?.message ?? 'spawn failed'}\n`).slice(-MAX_OUTPUT) }
-        }
         if (e.channel === 'exit') {
-          const p = e.payload as { code: number | null; killed: boolean }
-          const code = p.code
-          return {
-            ...r,
-            status: code === 0 || p.killed ? 'exited' : 'error',
-            code,
-            output: (r.output + `\n[exit ${code ?? 'null'}]\n`).slice(-MAX_OUTPUT)
-          }
+          const p = e.payload as { code: number }
+          return { ...r, status: 'exited', code: p.code }
         }
         return r
       })

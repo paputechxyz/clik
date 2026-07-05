@@ -1,13 +1,15 @@
-import { ipcMain, dialog, type BrowserWindow, type OpenDialogOptions } from 'electron'
-import { RunManager } from './runner'
+import { ipcMain, dialog } from 'electron'
+import os from 'node:os'
+import type { BrowserWindow, OpenDialogOptions } from 'electron'
 import { Registry } from './registry'
 import { discoverTree } from './adapter'
 import { ShellEnvCache } from './shell-env'
 import { resolveOnPath, scanCandidates, DEFAULT_CANDIDATES } from './scanner'
-import type { RunRequest, CliEntry, RunEvent } from '../shared/types'
+import { PtyManager } from './pty'
+import type { CliEntry, PtyEvent, PtyOpenRequest } from '../shared/types'
 
 export interface IpcCleanup {
-  runsStopAll: () => void
+  stopAll: () => void
 }
 
 export function registerIpc(getWin: () => BrowserWindow | null): IpcCleanup {
@@ -16,16 +18,12 @@ export function registerIpc(getWin: () => BrowserWindow | null): IpcCleanup {
   void shellEnv.refresh().catch(() => {
     // fallback: shellEnv.current stays process.env; surfaced via shell-env:status
   })
-  const runs = new RunManager((runId, channel, payload) => {
-    const evt: RunEvent = { runId, channel, payload }
-    getWin()?.webContents.send('run:event', evt)
+  const ptys = new PtyManager((id, channel, payload) => {
+    const evt: PtyEvent = { id, channel, payload }
+    getWin()?.webContents.send('pty:event', evt)
   }, () => shellEnv.current)
 
   ipcMain.handle('cli:discover', (_e, binaryPath: string) => discoverTree(binaryPath))
-
-  ipcMain.handle('cli:run', (_e, req: RunRequest) => runs.start(req))
-  ipcMain.handle('run:stop', (_e, runId: string) => runs.stop(runId))
-  ipcMain.handle('run:stdin', (_e, runId: string, data: string) => runs.writeStdin(runId, data))
 
   ipcMain.handle('dialog:pickBinary', async () => {
     const win = getWin()
@@ -68,5 +66,22 @@ export function registerIpc(getWin: () => BrowserWindow | null): IpcCleanup {
   ipcMain.handle('registry:update', (_e, entry: CliEntry) => registry.update(entry))
   ipcMain.handle('registry:remove', (_e, id: string) => registry.remove(id))
 
-  return { runsStopAll: () => runs.stopAll() }
+  ipcMain.handle('pty:open', (_e, req: PtyOpenRequest) => ptys.open(req))
+  ipcMain.handle('pty:openShell', () =>
+    ptys.open({
+      file: shellEnv.shell || process.env.SHELL || '/bin/zsh',
+      args: ['-l'],
+      cwd: os.homedir(),
+      env: {}
+    })
+  )
+  ipcMain.on('pty:input', (_e, id: string, data: string) => {
+    ptys.input(id, data)
+  })
+  ipcMain.on('pty:resize', (_e, id: string, cols: number, rows: number) => {
+    ptys.resize(id, cols, rows)
+  })
+  ipcMain.handle('pty:kill', (_e, id: string) => ptys.kill(id))
+
+  return { stopAll: () => ptys.killAll() }
 }

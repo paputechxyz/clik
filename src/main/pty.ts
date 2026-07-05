@@ -1,21 +1,6 @@
 import * as pty from 'node-pty'
 import { randomUUID } from 'node:crypto'
-
-export interface PtyOpenRequest {
-  file: string
-  args?: string[]
-  cwd?: string
-  env?: Record<string, string>
-  cols?: number
-  rows?: number
-}
-
-export type PtyChannel = 'data' | 'exit'
-
-export interface PtyExitPayload {
-  code: number
-  signal?: number
-}
+import type { PtyChannel, PtyExitPayload, PtyOpenRequest } from '../shared/types'
 
 type Emitter = (id: string, channel: PtyChannel, payload: unknown) => void
 type BaseEnvProvider = () => Record<string, string>
@@ -64,11 +49,11 @@ export class PtyManager {
     }
   }
 
-  kill(id: string, signal?: string): boolean {
+  kill(id: string): boolean {
     const p = this.handles.get(id)
     if (!p) return false
     try {
-      p.kill(signal)
+      p.kill()
       return true
     } catch {
       return false

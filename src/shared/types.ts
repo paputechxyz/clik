@@ -27,27 +27,12 @@ export interface CommandTree {
   root: CommandNode
 }
 
-export interface RunRequest {
-  binaryPath: string
-  argv: string[]
-  cwd?: string
-  env?: Record<string, string>
-}
-
 export interface CliEntry {
   id: string
   name: string
   binaryPath: string
   env: Record<string, string>
   defaultArgs?: string[]
-}
-
-export type RunChannel = 'stdout' | 'stderr' | 'exit' | 'error'
-
-export interface RunEvent {
-  runId: string
-  channel: RunChannel
-  payload: unknown
 }
 
 export interface ShellEnvStatus {
@@ -69,11 +54,32 @@ export interface ResolvedCommand {
   path: string
 }
 
+export interface PtyOpenRequest {
+  file: string
+  args?: string[]
+  cwd?: string
+  env?: Record<string, string>
+  cols?: number
+  rows?: number
+}
+
+export type PtyChannel = 'data' | 'exit'
+
+export interface PtyExitPayload {
+  code: number
+  signal?: number
+}
+
+export interface PtyEvent {
+  id: string
+  channel: PtyChannel
+  payload: unknown
+}
+
+export type MenuAction = 'new-tab' | 'close-tab'
+
 export interface CliExplorerApi {
   discover: (binaryPath: string) => Promise<CommandTree>
-  run: (req: RunRequest) => Promise<string>
-  stopRun: (runId: string) => Promise<boolean>
-  writeStdin: (runId: string, data: string) => Promise<boolean>
   pickBinary: () => Promise<string | null>
   shellEnv: {
     status: () => Promise<ShellEnvStatus>
@@ -89,5 +95,13 @@ export interface CliExplorerApi {
     update: (entry: CliEntry) => Promise<CliEntry>
     remove: (id: string) => Promise<void>
   }
-  onRunEvent: (cb: (e: RunEvent) => void) => () => void
+  pty: {
+    open: (req: PtyOpenRequest) => Promise<string>
+    openShell: () => Promise<string>
+    input: (id: string, data: string) => void
+    resize: (id: string, cols: number, rows: number) => void
+    kill: (id: string) => Promise<boolean>
+    onEvent: (cb: (e: PtyEvent) => void) => () => void
+  }
+  onMenu: (cb: (action: MenuAction) => void) => () => void
 }

@@ -3,9 +3,6 @@ import type { CliExplorerApi } from '../shared/types'
 
 const api: CliExplorerApi = {
   discover: (binaryPath) => ipcRenderer.invoke('cli:discover', binaryPath),
-  run: (req) => ipcRenderer.invoke('cli:run', req),
-  stopRun: (runId) => ipcRenderer.invoke('run:stop', runId),
-  writeStdin: (runId, data) => ipcRenderer.invoke('run:stdin', runId, data),
   pickBinary: () => ipcRenderer.invoke('dialog:pickBinary'),
   shellEnv: {
     status: () => ipcRenderer.invoke('shell-env:status'),
@@ -21,11 +18,29 @@ const api: CliExplorerApi = {
     update: (entry) => ipcRenderer.invoke('registry:update', entry),
     remove: (id) => ipcRenderer.invoke('registry:remove', id)
   },
-  onRunEvent: (cb) => {
-    const handler = (_e: unknown, data: Parameters<typeof cb>[0]) => cb(data)
-    ipcRenderer.on('run:event', handler)
+  pty: {
+    open: (req) => ipcRenderer.invoke('pty:open', req),
+    openShell: () => ipcRenderer.invoke('pty:openShell'),
+    input: (id, data) => {
+      ipcRenderer.send('pty:input', id, data)
+    },
+    resize: (id, cols, rows) => {
+      ipcRenderer.send('pty:resize', id, cols, rows)
+    },
+    kill: (id) => ipcRenderer.invoke('pty:kill', id),
+    onEvent: (cb) => {
+      const handler = (_e: unknown, data: Parameters<typeof cb>[0]) => cb(data)
+      ipcRenderer.on('pty:event', handler)
+      return () => {
+        ipcRenderer.removeListener('pty:event', handler)
+      }
+    }
+  },
+  onMenu: (cb) => {
+    const handler = (_e: unknown, action: Parameters<typeof cb>[0]) => cb(action)
+    ipcRenderer.on('menu:action', handler)
     return () => {
-      ipcRenderer.removeListener('run:event', handler)
+      ipcRenderer.removeListener('menu:action', handler)
     }
   }
 }

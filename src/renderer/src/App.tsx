@@ -8,7 +8,9 @@ import './types'
 
 export function App(): JSX.Element {
   const loadEntries = useAppStore((s) => s.loadEntries)
-  const handleRunEvent = useAppStore((s) => s.handleRunEvent)
+  const handlePtyEvent = useAppStore((s) => s.handlePtyEvent)
+  const openShellTab = useAppStore((s) => s.openShellTab)
+  const closeRun = useAppStore((s) => s.closeRun)
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   useEffect(() => {
@@ -16,9 +18,20 @@ export function App(): JSX.Element {
   }, [loadEntries])
 
   useEffect(() => {
-    const off = window.cliExplorer.onRunEvent(handleRunEvent)
-    return off
-  }, [handleRunEvent])
+    const offPty = window.cliExplorer.pty.onEvent(handlePtyEvent)
+    const offMenu = window.cliExplorer.onMenu((action) => {
+      if (action === 'new-tab') {
+        void openShellTab()
+      } else if (action === 'close-tab') {
+        const id = useAppStore.getState().activeRunId
+        if (id) void closeRun(id)
+      }
+    })
+    return () => {
+      offPty()
+      offMenu()
+    }
+  }, [handlePtyEvent, openShellTab, closeRun])
 
   return (
     <div className="app">

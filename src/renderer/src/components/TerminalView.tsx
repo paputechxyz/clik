@@ -26,8 +26,7 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
       },
       scrollback: 5000,
       convertEol: true,
-      disableStdin: true,
-      cursorBlink: false
+      cursorBlink: true
     })
     const fit = new FitAddon()
     term.loadAddon(fit)
@@ -41,6 +40,11 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
     writtenRef.current = run.output.length
     termRef.current = term
     setReady(true)
+
+    term.onData((d) => window.cliExplorer.pty.input(run.id, d))
+    term.onResize(({ cols, rows }) => window.cliExplorer.pty.resize(run.id, cols, rows))
+    window.cliExplorer.pty.resize(run.id, term.cols, term.rows)
+    term.focus()
 
     const ro = new ResizeObserver(() => {
       try {

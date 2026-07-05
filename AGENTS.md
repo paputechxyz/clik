@@ -36,22 +36,32 @@ present and that the arch matches.
 ## IPC channels
 
 - `cli:discover` (binaryPath) -> `CommandTree`
-- `cli:run` (RunRequest) -> runId; events stream via `run:event`
-- `run:stop` / `run:stdin` (runId[, data])
 - `dialog:pickBinary` -> path|null
 - `shell-env:status` / `shell-env:refresh` (login+interactive shell env cache)
 - `scan:resolve` (name -> path|null) / `scan:suggest` (names? -> {name,path}[])
 - `registry:list|add|update|remove`
+- `pty:open` (PtyOpenRequest) -> id / `pty:openShell` -> id (login `$SHELL -l` at homedir)
+- `pty:input` / `pty:resize` (send, fire-and-forget — one per keystroke/resize)
+- `pty:kill` (id) ; events stream via `pty:event` {id, channel:'data'|'exit', payload}
+- `menu:action` (main -> renderer) 'new-tab' | 'close-tab' (Cmd+T / Cmd+W)
+
+## Terminal model
+
+Every tab is a PTY (`PtyManager`, `node-pty`) — interactive: free typing,
+echo, TUI, resize, and kernel-handled Ctrl+C / Ctrl+D (xterm emits the byte,
+the PTY's line discipline delivers the signal). Flag-panel Run opens the built
+argv in a PTY; Cmd+T (or the `+`) opens a login-shell tab. Close tab / Stop ->
+`pty.kill()` (SIGHUP). `pty.input`/`pty.resize` use `ipcRenderer.send` (no ack)
+for per-keystroke throughput; `open`/`openShell`/`kill` use `invoke`.
 
 ## Run output
 
 Per-run output renders in a real terminal emulator (`@xterm/xterm` +
-`@xterm/addon-fit`) via `TerminalView`, so ANSI colors, cursor movement,
-carriage-return/line-overwrite and clears all render correctly. Output is
-delta-written from the store's accumulated string; if the head is trimmed by
-the MAX_OUTPUT cap (length shrinks) the terminal resets and rewrites. Output is
-pipe-based (no PTY), so the line-based stdin box in the run pane remains the
-input surface; raw-mode TUIs are a future PTY follow-up.
+`@xterm/addon-fit`) via `TerminalView`, backed by a PTY (see Terminal model).
+Keystrokes go `term.onData -> pty.input`; resize goes `term.onResize ->
+pty.resize`. The store keeps an accumulated `output` string per tab so
+switching tabs preserves scrollback on remount; `TerminalView` writes the delta
+(`computeWriteDelta`) and resets+rewrites if the head is trimmed by MAX_OUTPUT.
 
 ## Environment model
 

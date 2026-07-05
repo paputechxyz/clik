@@ -1,6 +1,7 @@
 import { app, BrowserWindow, shell } from 'electron'
 import path from 'node:path'
 import { registerIpc, type IpcCleanup } from './ipc'
+import { buildMenu } from './menu'
 
 process.env.APP_ROOT = path.join(__dirname, '..', '..')
 const PRELOAD = path.join(process.env.APP_ROOT, 'out/preload')
@@ -43,6 +44,7 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   ipc = registerIpc(() => win)
+  buildMenu(() => win)
   createWindow()
 
   app.on('activate', () => {
@@ -55,5 +57,5 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
-  ipc?.runsStopAll()
+  ipc?.stopAll()
 })

@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { TerminalView } from './TerminalView'
 
@@ -8,14 +7,19 @@ export function RunTabs(): JSX.Element {
   const setActiveRun = useAppStore((s) => s.setActiveRun)
   const closeRun = useAppStore((s) => s.closeRun)
   const stopRun = useAppStore((s) => s.stopRun)
-  const writeStdin = useAppStore((s) => s.writeStdin)
+  const openShellTab = useAppStore((s) => s.openShellTab)
 
   const active = runs.find((r) => r.id === activeRunId) ?? null
 
   if (runs.length === 0) {
     return (
       <section className="output">
-        <div className="output-empty">Run output will appear here.</div>
+        <div className="output-empty">
+          No terminal tabs.{' '}
+          <button className="link-btn" onClick={() => void openShellTab()}>
+            Open a shell tab
+          </button>
+        </div>
       </section>
     )
   }
@@ -43,34 +47,25 @@ export function RunTabs(): JSX.Element {
             </button>
           </div>
         ))}
+        <button className="tab-add" title="New shell tab (Cmd+T)" onClick={() => void openShellTab()}>
+          +
+        </button>
       </div>
 
       {active ? (
-        <RunPane run={active} onStop={() => void stopRun(active.id)} onStdin={(t) => void writeStdin(active.id, t)} />
+        <RunPane run={active} onStop={() => void stopRun(active.id)} />
       ) : null}
     </section>
   )
 }
 
-function RunPane({
-  run,
-  onStop,
-  onStdin
-}: {
-  run: ReturnType<typeof useAppStore.getState>['runs'][number]
-  onStop: () => void
-  onStdin: (t: string) => void
-}): JSX.Element {
-  const [stdin, setStdin] = useState('')
-
+function RunPane({ run, onStop }: { run: ReturnType<typeof useAppStore.getState>['runs'][number]; onStop: () => void }): JSX.Element {
   return (
     <div className="run-pane">
       <div className="run-meta">
-        <code className="cmd-preview small">
-          {run.binaryName} {run.argv.join(' ')}
-        </code>
+        <code className="cmd-preview small">{run.preview}</code>
         {run.status === 'running' ? (
-          <button className="ghost-btn" onClick={onStop}>
+          <button className="ghost-btn" onClick={onStop} title="Kill (SIGHUP)">
             Stop
           </button>
         ) : (
@@ -80,24 +75,6 @@ function RunPane({
         )}
       </div>
       <TerminalView run={run} />
-      {run.status === 'running' && (
-        <div className="stdin-row">
-          <span className="stdin-prompt">›</span>
-          <input
-            type="text"
-            className="flag-input stdin-input"
-            placeholder="stdin (press Enter to send)"
-            value={stdin}
-            onChange={(e) => setStdin(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                onStdin(stdin + '\n')
-                setStdin('')
-              }
-            }}
-          />
-        </div>
-      )}
     </div>
   )
 }
