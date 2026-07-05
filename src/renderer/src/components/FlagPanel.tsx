@@ -14,12 +14,7 @@ export function FlagPanel(): JSX.Element {
   const runCommand = useAppStore((s) => s.runCommand)
 
   if (!tree) {
-    return (
-      <div className="column details muted">
-        <div className="column-head">Flags</div>
-        <div className="pane-empty">No command selected.</div>
-      </div>
-    )
+    return <EmptyFlags text="No command selected." />
   }
 
   let node: CommandNode = tree.root
@@ -30,24 +25,21 @@ export function FlagPanel(): JSX.Element {
   }
 
   if (selection.length === 0 || node.isGroup) {
-    return (
-      <div className="column details muted">
-        <div className="column-head">Flags</div>
-        <div className="pane-empty">Select a leaf command to edit its flags.</div>
-      </div>
-    )
+    return <EmptyFlags text="Select a leaf command to edit its flags." />
   }
 
-  const preview = commandPreview(tree.binaryName, buildArgv({
-    commandPath: selection,
-    flags: [...node.flags, ...node.inheritedFlags],
-    values: flagValues,
-    positionalArgs: shellSplit(positionalArgs)
-  }))
+  const preview = commandPreview(
+    tree.binaryName,
+    buildArgv({
+      commandPath: selection,
+      flags: [...node.flags, ...node.inheritedFlags],
+      values: flagValues,
+      positionalArgs: shellSplit(positionalArgs)
+    })
+  )
 
   return (
-    <div className="column details">
-      <div className="column-head">{selection.join(' ')}</div>
+    <>
       <div className="flag-scroll">
         {node.long && <p className="flag-long">{node.long}</p>}
 
@@ -87,6 +79,14 @@ export function FlagPanel(): JSX.Element {
           Run
         </button>
       </div>
+    </>
+  )
+}
+
+function EmptyFlags({ text }: { text: string }): JSX.Element {
+  return (
+    <div className="flag-scroll">
+      <div className="pane-empty">{text}</div>
     </div>
   )
 }

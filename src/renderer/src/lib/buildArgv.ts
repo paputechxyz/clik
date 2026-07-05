@@ -38,6 +38,18 @@ export function commandPreview(binaryName: string, argv: string[]): string {
   return `${binaryName} ${argv.map(fmt).join(' ')}`
 }
 
+const SAFE_TOKEN_RE = /^[A-Za-z0-9_@%+=:,./-]+$/
+
+export function shellQuoteToken(tok: string): string {
+  if (tok === '') return "''"
+  if (SAFE_TOKEN_RE.test(tok)) return tok
+  return "'" + tok.replace(/'/g, "'\\''") + "'"
+}
+
+export function shellQuote(tokens: string[]): string {
+  return tokens.map(shellQuoteToken).join(' ')
+}
+
 export function shellSplit(input: string): string[] {
   const out: string[] = []
   let cur = ''

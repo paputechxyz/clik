@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildArgv, commandPreview, shellSplit } from '../buildArgv'
+import { buildArgv, commandPreview, shellQuote, shellSplit } from '../buildArgv'
 import type { Flag } from '../../../../shared/types'
 
 const f = (over: Partial<Flag> & { name: string; type: Flag['type'] }): Flag => ({
@@ -58,5 +58,23 @@ describe('buildArgv', () => {
       'Toronto',
       '--no-flag-ish'
     ])
+  })
+})
+
+describe('shellQuote', () => {
+  it('leaves safe tokens unquoted', () => {
+    expect(shellQuote(['/usr/local/bin/linkedin-jobs', 'list', '--top', '10'])).toBe(
+      '/usr/local/bin/linkedin-jobs list --top 10'
+    )
+  })
+
+  it('single-quotes tokens with spaces or special chars', () => {
+    expect(shellQuote(['Staff Engineer', 'a$b', "O'Brien"])).toBe(
+      "'Staff Engineer' 'a$b' 'O'\\''Brien'"
+    )
+  })
+
+  it('quotes an empty token as two single quotes', () => {
+    expect(shellQuote([''])).toBe("''")
   })
 })
