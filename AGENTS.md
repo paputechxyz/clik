@@ -22,7 +22,9 @@ present and that the arch matches.
 ## Conventions
 
 - Electron main/preload compile to CommonJS; do not set `"type": "module"`.
-- Never spawn with `shell: true` — always pass an argv array to `child_process.spawn`.
+- Never spawn with `shell: true`. The only `child_process.spawn` sites are
+  `--help` discovery (`adapter/cobra.ts`) and shell-env capture (`shell-env.ts`);
+  both pass an argv array with `shell: false`. Runs execute in a PTY, not spawn.
 - Renderer talks to main only through `window.cliExplorer` (contextBridge).
   contextIsolation is on; nodeIntegration is off. Do not bypass.
 - Shared types live in `src/shared/types.ts` and are imported by all three
@@ -31,7 +33,7 @@ present and that the arch matches.
   and is unit-tested from `--help` fixtures under
   `src/main/adapter/__tests__/fixtures/`. `discoverTree` shells out.
 - macOS-first. Title bar uses `hiddenInset`.
-- Closing a run tab must stop its child process (`RunManager.stop`).
+- Closing a run tab must kill its PTY (`PtyManager.kill` / `pty:kill`, SIGHUP).
 
 ## IPC channels
 
