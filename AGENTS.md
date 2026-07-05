@@ -6,7 +6,18 @@
 - `npm run typecheck` — `tsc --noEmit` (run before considering work done)
 - `npm test` — `vitest run` adapter/unit tests (run before considering work done)
 - `npm run build` — build main/preload/renderer to `out/`
+- `npm run rebuild` — rebuild native modules (`node-pty`) against the installed
+  Electron ABI; also runs on `postinstall`
 - `npm run build:mac` — produce a macOS app dir under `dist/`
+
+## Native modules
+
+`node-pty` is a C++ native module. It must be rebuilt against Electron's ABI
+(`npm run rebuild`, or `postinstall` does it automatically) and is unpacked
+from the asar at package time (`build.asarUnpack` in package.json). If you bump
+Electron, rerun `npm run rebuild`. If the packaged app fails to load
+`node-pty`, check `app.asar.unpacked/node_modules/node-pty/build/Release/` is
+present and that the arch matches.
 
 ## Conventions
 
