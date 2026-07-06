@@ -1,8 +1,8 @@
-import type { CliExplorerApi } from '../../shared/types'
+import type { ClikApi } from '../../shared/types'
 
 declare global {
   interface Window {
-    cliExplorer: CliExplorerApi
+    clik: ClikApi
   }
 }
 

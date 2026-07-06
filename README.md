@@ -1,4 +1,12 @@
-# CLI Explorer
+<p align="center">
+  <img src="src/logo.png" alt="CLIk" width="120" />
+</p>
+
+<h1 align="center">CLIk</h1>
+
+<p align="center"><em>The clickable CLI — click commands instead of typing them.</em></p>
+
+---
 
 macOS Finder-style column GUI for any cobra CLI. Browse a CLI's command tree as
 Miller columns, edit typed flags in a form, and run commands in real,
@@ -34,7 +42,7 @@ interactive terminal tabs (PTY-backed). macOS-first.
 - `src/main/` — Electron main: app/window/menu, IPC, `PtyManager` (`node-pty`),
   CLI registry, cobra adapter (`adapter/cobra.ts` parses `--help` into a typed
   tree), shell-env capture, PATH scanner.
-- `src/preload/` — contextBridge surface (`window.cliExplorer`); context
+- `src/preload/` — contextBridge surface (`window.clik`); context
   isolation on, node integration off.
 - `src/renderer/` — React UI: column navigator, flag panel, terminal tabs
   (xterm.js). State in Zustand.

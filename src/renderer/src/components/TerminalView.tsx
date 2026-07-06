@@ -41,9 +41,9 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
     termRef.current = term
     setReady(true)
 
-    term.onData((d) => window.cliExplorer.pty.input(run.id, d))
-    term.onResize(({ cols, rows }) => window.cliExplorer.pty.resize(run.id, cols, rows))
-    window.cliExplorer.pty.resize(run.id, term.cols, term.rows)
+    term.onData((d) => window.clik.pty.input(run.id, d))
+    term.onResize(({ cols, rows }) => window.clik.pty.resize(run.id, cols, rows))
+    window.clik.pty.resize(run.id, term.cols, term.rows)
     term.focus()
 
     const ro = new ResizeObserver(() => {

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-const LS_KEY = 'cli-explorer-layout-v1'
+const LS_KEY = 'clik-layout-v1'
 
 const DEFAULT_CMD_WEIGHT = 1.5
 const DEFAULT_FLAGS_WEIGHT = 2.2

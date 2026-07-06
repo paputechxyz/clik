@@ -1,11 +1,13 @@
 import { app, BrowserWindow, shell } from 'electron'
 import path from 'node:path'
+import fs from 'node:fs'
 import { registerIpc, type IpcCleanup } from './ipc'
 import { buildMenu } from './menu'
 
 process.env.APP_ROOT = path.join(__dirname, '..', '..')
 const PRELOAD = path.join(process.env.APP_ROOT, 'out/preload')
 const RENDERER_DIST = path.join(process.env.APP_ROOT, 'out/renderer')
+const LOGO = path.join(process.env.APP_ROOT, 'src/logo.png')
 
 let win: BrowserWindow | null = null
 let ipc: IpcCleanup | null = null
@@ -18,6 +20,7 @@ function createWindow(): void {
     minHeight: 600,
     titleBarStyle: 'hiddenInset',
     backgroundColor: '#1e1e1e',
+    ...(fs.existsSync(LOGO) ? { icon: LOGO } : {}),
     show: false,
     webPreferences: {
       preload: path.join(PRELOAD, 'index.js'),

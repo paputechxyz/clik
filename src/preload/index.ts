@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { CliExplorerApi } from '../shared/types'
+import type { ClikApi } from '../shared/types'
 
-const api: CliExplorerApi = {
+const api: ClikApi = {
   discover: (binaryPath) => ipcRenderer.invoke('cli:discover', binaryPath),
   discoverCommand: (binaryPath, cmdPath) => ipcRenderer.invoke('cli:discover-command', binaryPath, cmdPath),
   pickBinary: () => ipcRenderer.invoke('dialog:pickBinary'),
@@ -46,4 +46,4 @@ const api: CliExplorerApi = {
   }
 }
 
-contextBridge.exposeInMainWorld('cliExplorer', api)
+contextBridge.exposeInMainWorld('clik', api)
