@@ -24,8 +24,8 @@ export function App(): JSX.Element {
   }, [loadEntries])
 
   useEffect(() => {
-    const offPty = window.cliExplorer.pty.onEvent(handlePtyEvent)
-    const offMenu = window.cliExplorer.onMenu((action) => {
+    const offPty = window.clik.pty.onEvent(handlePtyEvent)
+    const offMenu = window.clik.onMenu((action) => {
       if (action === 'new-tab') {
         void openShellTab()
       } else if (action === 'close-tab') {
@@ -65,7 +65,7 @@ export function App(): JSX.Element {
   return (
     <div className="app">
       <header className="titlebar">
-        <div className="title">CLI Explorer</div>
+        <div className="title">CLIk</div>
         <div className="toolbar">
           <button className="icon-btn" title="Settings" onClick={() => setSettingsOpen(true)}>
             <GearIcon />

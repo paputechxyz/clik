@@ -6,12 +6,12 @@ describe('parseEnvBlock', () => {
   it('extracts KEY=VALUE lines between markers, ignoring surrounding noise', () => {
     const out =
       'some rc noise\n' +
-      '__CLI_EXPLORER_ENV_BEGIN__\n' +
+      '__CLIK_ENV_BEGIN__\n' +
       'FOO=bar\n' +
       'PATH=/usr/local/bin:/usr/bin:/bin\n' +
       'LJ_COOKIE=whatever=with=equals\n' +
       'EMPTY=\n' +
-      '__CLI_EXPLORER_ENV_END__\n' +
+      '__CLIK_ENV_END__\n' +
       'trailing junk'
     const env = parseEnvBlock(out)
     expect(env.FOO).toBe('bar')

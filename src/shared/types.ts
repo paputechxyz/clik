@@ -78,7 +78,7 @@ export interface PtyEvent {
 
 export type MenuAction = 'new-tab' | 'close-tab'
 
-export interface CliExplorerApi {
+export interface ClikApi {
   discover: (binaryPath: string) => Promise<CommandTree>
   discoverCommand: (binaryPath: string, cmdPath: string[]) => Promise<CommandNode>
   pickBinary: () => Promise<string | null>

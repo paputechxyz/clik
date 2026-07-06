@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import type { CommandTree, CliExplorerApi } from '../../../../shared/types'
+import type { CommandTree, ClikApi } from '../../../../shared/types'
 import { useAppStore } from '../useAppStore'
 
 function fakeTree(label: string): CommandTree {
@@ -20,9 +20,9 @@ function fakeTree(label: string): CommandTree {
   }
 }
 
-function installApi(api: Partial<CliExplorerApi>): void {
-  ;(globalThis as unknown as { window: { cliExplorer: CliExplorerApi } }).window = {
-    cliExplorer: api as unknown as CliExplorerApi
+function installApi(api: Partial<ClikApi>): void {
+  ;(globalThis as unknown as { window: { clik: ClikApi } }).window = {
+    clik: api as unknown as ClikApi
   }
 }
 

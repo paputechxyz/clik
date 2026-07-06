@@ -3,7 +3,7 @@ import { useAppStore } from '../store/useAppStore'
 import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronUpIcon, TrashIcon } from './icons'
 import { Resizer } from './Resizer'
 
-const LS_KEY = 'cli-explorer-library-layout-v1'
+const LS_KEY = 'clik-library-layout-v1'
 
 interface LibraryLayout {
   libraryCollapsed: boolean

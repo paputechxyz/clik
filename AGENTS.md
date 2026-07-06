@@ -25,7 +25,7 @@ present and that the arch matches.
 - Never spawn with `shell: true`. The only `child_process.spawn` sites are
   `--help` discovery (`adapter/cobra.ts`) and shell-env capture (`shell-env.ts`);
   both pass an argv array with `shell: false`. Runs execute in a PTY, not spawn.
-- Renderer talks to main only through `window.cliExplorer` (contextBridge).
+- Renderer talks to main only through `window.clik` (contextBridge).
   contextIsolation is on; nodeIntegration is off. Do not bypass.
 - Shared types live in `src/shared/types.ts` and are imported by all three
   contexts (main, preload, renderer).

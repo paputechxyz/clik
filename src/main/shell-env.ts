@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 
-const MARK_BEGIN = '__CLI_EXPLORER_ENV_BEGIN__'
-const MARK_END = '__CLI_EXPLORER_ENV_END__'
+const MARK_BEGIN = '__CLIK_ENV_BEGIN__'
+const MARK_END = '__CLIK_ENV_END__'
 
 export interface CaptureOptions {
   shell?: string

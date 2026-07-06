@@ -46,8 +46,8 @@ const MAX_OUTPUT = 1_000_000
 const MAX_HISTORY = 200
 
 // ---- Flag persistence (Task 5) -------------------------------------------
-const PERSIST_KEY = 'cli-explorer-session-v1'
-const LIBRARY_KEY = 'cli-explorer-library-v1'
+const PERSIST_KEY = 'clik-session-v1'
+const LIBRARY_KEY = 'clik-library-v1'
 
 interface SavedCommand {
   flags: Record<string, unknown>
@@ -143,7 +143,7 @@ async function runDiscover(get: StoreGet, set: StoreSet, id: string): Promise<vo
     discoverError: { ...s.discoverError, [id]: null }
   }))
   try {
-    const tree = await window.cliExplorer.discover(entry.binaryPath)
+    const tree = await window.clik.discover(entry.binaryPath)
     set((s) => ({ trees: { ...s.trees, [id]: tree }, discovering: { ...s.discovering, [id]: false } }))
   } catch (err) {
     set((s) => ({
@@ -234,10 +234,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   history: libraryInitial.history,
 
   async loadEntries() {
-    const entries = await window.cliExplorer.registry.list()
+    const entries = await window.clik.registry.list()
     let shellName = ''
     try {
-      const status = await window.cliExplorer.shellEnv.status()
+      const status = await window.clik.shellEnv.status()
       shellName = status.shell
     } catch {
       shellName = ''
@@ -254,13 +254,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   async addEntry(entry) {
-    const created = await window.cliExplorer.registry.add(entry)
+    const created = await window.clik.registry.add(entry)
     set({ entries: [...get().entries, created] })
     if (!get().selectedEntryId) await get().selectEntry(created.id)
   },
 
   async updateEntry(entry) {
-    await window.cliExplorer.registry.update(entry)
+    await window.clik.registry.update(entry)
     set((s) => {
       const trees = { ...s.trees }
       delete trees[entry.id]
@@ -270,7 +270,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   async removeEntry(id) {
-    await window.cliExplorer.registry.remove(id)
+    await window.clik.registry.remove(id)
     const entries = get().entries.filter((e) => e.id !== id)
     set((s) => {
       const selections = { ...s.selections }
@@ -372,7 +372,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     if (!target) return
 
-    window.cliExplorer.pty.input(target.id, commandString + '\n')
+    window.clik.pty.input(target.id, commandString + '\n')
     set({
       activeRunId: target.id,
       runs: get().runs.map((r) =>
@@ -401,7 +401,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   async openShellTab() {
-    const id = await window.cliExplorer.pty.openShell()
+    const id = await window.clik.pty.openShell()
     const name = get().shellName || 'shell'
     const run: Run = {
       id,
@@ -418,7 +418,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   async closeRun(id) {
     const run = get().runs.find((r) => r.id === id)
-    if (run && run.status === 'running') await window.cliExplorer.pty.kill(id)
+    if (run && run.status === 'running') await window.clik.pty.kill(id)
     const runs = get().runs.filter((r) => r.id !== id)
     set({
       runs,
@@ -588,7 +588,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (cmdPath.length > 0 && !findNode(tree, cmdPath)) {
       console.log('[import] cmdPath not in tree — discovering on demand:', cmdPath)
       try {
-        const discovered = await window.cliExplorer.discoverCommand(entry.binaryPath, cmdPath)
+        const discovered = await window.clik.discoverCommand(entry.binaryPath, cmdPath)
         console.log('[import] discovered node=', discovered.name, 'isGroup=', discovered.isGroup, 'flags=', discovered.flags.map((f) => `${f.name}:${f.type}`))
         tree = graftIntoTree(tree, cmdPath, discovered)
         set((s) => ({ trees: { ...s.trees, [entryId]: tree! } }))

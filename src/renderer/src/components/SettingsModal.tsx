@@ -36,21 +36,21 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
   const [suggestions, setSuggestions] = useState<ResolvedCommand[]>([])
 
   useEffect(() => {
-    void window.cliExplorer.shellEnv.status().then(setShellStatus)
-    void window.cliExplorer.scan.suggest().then(setSuggestions)
+    void window.clik.shellEnv.status().then(setShellStatus)
+    void window.clik.scan.suggest().then(setSuggestions)
   }, [])
 
   const refreshShell = async () => {
     setRefreshing(true)
-    await window.cliExplorer.shellEnv.refresh()
-    setShellStatus(await window.cliExplorer.shellEnv.status())
-    setSuggestions(await window.cliExplorer.scan.suggest())
+    await window.clik.shellEnv.refresh()
+    setShellStatus(await window.clik.shellEnv.status())
+    setSuggestions(await window.clik.scan.suggest())
     setRefreshing(false)
   }
 
   const resolveName = async (name: string): Promise<string | null> => {
     if (name.trim() === '') return null
-    return window.cliExplorer.scan.resolve(name)
+    return window.clik.scan.resolve(name)
   }
 
   const onNameBlur = async () => {
@@ -67,7 +67,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
   }
 
   const pickBinary = async () => {
-    const p = await window.cliExplorer.pickBinary()
+    const p = await window.clik.pickBinary()
     if (p) {
       setNewPath(p)
       setAutoPath(false)
@@ -176,7 +176,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
                 <button
                   className="ghost-btn"
                   onClick={async () => {
-                    const p = await window.cliExplorer.pickBinary()
+                    const p = await window.clik.pickBinary()
                     if (p) updateField(e, { binaryPath: p })
                   }}
                 >

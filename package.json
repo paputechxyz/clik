@@ -1,7 +1,7 @@
 {
-  "name": "cli-explorer",
+  "name": "clik",
   "version": "0.1.0",
-  "description": "macOS Finder-style column GUI for any cobra CLI",
+  "description": "Clickable CLI — macOS Finder-style column GUI for any cobra CLI",
   "main": "out/main/index.js",
   "license": "MIT",
   "scripts": {
@@ -37,14 +37,15 @@
     "vitest": "^2.1.0"
   },
   "build": {
-    "appId": "com.cliexplorer.app",
-    "productName": "CLI Explorer",
+    "appId": "com.clik.app",
+    "productName": "CLIk",
     "mac": {
       "target": [
         "dmg",
         "zip"
       ],
-      "category": "public.app-category.developer-tools"
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.icns"
     },
     "asarUnpack": [
       "**/node_modules/node-pty/**"
