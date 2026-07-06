@@ -208,7 +208,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
               <input
                 type="text"
                 className="flag-input"
-                placeholder="linkedin-jobs"
+                placeholder="myapp"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 onBlur={() => void onNameBlur()}

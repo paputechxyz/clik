@@ -11,19 +11,19 @@ describe('buildArgv', () => {
   it('omits unset bool/string flags and includes set ones', () => {
     const flags = [
       f({ name: 'remote', type: 'bool' }),
-      f({ name: 'min-salary', type: 'string' }),
+      f({ name: 'min-value', type: 'string' }),
       f({ name: 'top', type: 'int', default: 25 })
     ]
     const argv = buildArgv({
       commandPath: ['search'],
       flags,
-      values: { remote: true, 'min-salary': '200k', top: '' },
-      positionalArgs: ['Staff Engineer', 'Toronto']
+      values: { remote: true, 'min-value': '200k', top: '' },
+      positionalArgs: ['foo bar', 'baz']
     })
-    expect(argv).toEqual(['search', 'Staff Engineer', 'Toronto', '--remote', '--min-salary', '200k'])
+    expect(argv).toEqual(['search', 'foo bar', 'baz', '--remote', '--min-value', '200k'])
   })
 
-  it('emits a repeatable --flag per stringSlice item (linkedin-jobs query --exclude)', () => {
+  it('emits a repeatable --flag per stringSlice item (myapp query --exclude)', () => {
     const flags = [f({ name: 'exclude', type: 'stringSlice' }), f({ name: 'limit', type: 'int', default: 50 })]
     const argv = buildArgv({
       commandPath: ['query'],
@@ -40,22 +40,22 @@ describe('buildArgv', () => {
     expect(argv).toEqual(['search', '--top', '3'])
   })
 
-  it('serialises a runnable linkedin-jobs search preview with quoting', () => {
+  it('serialises a runnable myapp search preview with quoting', () => {
     const argv = buildArgv({
       commandPath: ['search'],
-      flags: [f({ name: 'remote', type: 'bool' }), f({ name: 'min-salary', type: 'string' })],
-      values: { remote: true, 'min-salary': '200k' },
-      positionalArgs: ['Staff Engineer', 'Toronto']
+      flags: [f({ name: 'remote', type: 'bool' }), f({ name: 'min-value', type: 'string' })],
+      values: { remote: true, 'min-value': '200k' },
+      positionalArgs: ['foo bar', 'baz']
     })
-    expect(commandPreview('linkedin-jobs', argv)).toBe(
-      'linkedin-jobs search "Staff Engineer" Toronto --remote --min-salary 200k'
+    expect(commandPreview('myapp', argv)).toBe(
+      'myapp search "foo bar" baz --remote --min-value 200k'
     )
   })
 
   it('parses positional args with shell-style quoting', () => {
-    expect(shellSplit('"Staff Engineer" Toronto --no-flag-ish')).toEqual([
-      'Staff Engineer',
-      'Toronto',
+    expect(shellSplit('"foo bar" baz --no-flag-ish')).toEqual([
+      'foo bar',
+      'baz',
       '--no-flag-ish'
     ])
   })
@@ -63,15 +63,13 @@ describe('buildArgv', () => {
 
 describe('shellQuote', () => {
   it('leaves safe tokens unquoted', () => {
-    expect(shellQuote(['/usr/local/bin/linkedin-jobs', 'list', '--top', '10'])).toBe(
-      '/usr/local/bin/linkedin-jobs list --top 10'
+    expect(shellQuote(['/usr/local/bin/myapp', 'list', '--top', '10'])).toBe(
+      '/usr/local/bin/myapp list --top 10'
     )
   })
 
   it('single-quotes tokens with spaces or special chars', () => {
-    expect(shellQuote(['Staff Engineer', 'a$b', "O'Brien"])).toBe(
-      "'Staff Engineer' 'a$b' 'O'\\''Brien'"
-    )
+    expect(shellQuote(['foo bar', 'a$b', "O'Brien"])).toBe("'foo bar' 'a$b' 'O'\\''Brien'")
   })
 
   it('quotes an empty token as two single quotes', () => {

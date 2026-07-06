@@ -33,8 +33,4 @@ describe('scanCandidates', () => {
   it('DEFAULT_CANDIDATES has no duplicates', () => {
     expect(DEFAULT_CANDIDATES.length).toBe(new Set(DEFAULT_CANDIDATES).size)
   })
-
-  it('linkedin-jobs is a known suggestion candidate', () => {
-    expect(DEFAULT_CANDIDATES).toContain('linkedin-jobs')
-  })
 })

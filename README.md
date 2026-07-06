@@ -21,12 +21,12 @@ interactive terminal tabs (PTY-backed). macOS-first.
   xterm.js: free typing, echo, TUIs, window resize, and kernel-handled
   `Ctrl+C` / `Ctrl+D`. `Cmd+T` opens a login-shell tab; `Cmd+W` closes it.
 - **Shell env auto-load** — sources `~/.zshrc` (login + interactive) so CLIs
-  see your real environment (PATH, `LJ_COOKIE`, …).
+  see your real environment (PATH, `MY_TOKEN`, …).
 - **PATH auto-scan** — discovers commands on your `PATH` and pre-fills binary
   paths from `which`; every path stays editable.
 - **Refresh** — re-analyze a CLI after rebuilding it (drop the cached tree and
   re-parse every command + flag).
-- Works with any cobra CLI (linkedin-jobs, `gh`, `docker`, `kubectl`, …).
+- Works with any cobra CLI (`gh`, `docker`, `kubectl`, …).
 
 ## Commands
 

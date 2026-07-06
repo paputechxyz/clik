@@ -1,44 +1,44 @@
-linkedin-jobs pulls your personalized "Recommended for you" job feed from your
-LinkedIn session, searches the public job board, parses salaries, enriches and
-fit-scores postings with an LLM, and persists everything to a local SQLite
+myapp pulls your personalized "Recommended for you" item feed from your
+configured source, searches the public item board, parses values, enriches and
+fit-scores items with an LLM, and persists everything to a local SQLite
 store with offline full-text search.
 
-Recommended jobs (the headline command) need a logged-in session — export your
-LinkedIn cookies to LJ_COOKIE or LJ_COOKIES_FILE:
-    linkedin-jobs recommended      # pull your personalized feed
+Recommended items (the headline command) need a configured source — export your
+settings to MYAPP_SOURCE or MYAPP_SOURCE_FILE:
+    myapp recommended      # pull your personalized feed
 
 Anonymous search works without a session:
-    linkedin-jobs search "Staff Engineer" Toronto --min-salary 200k
+    myapp search "foo bar" arg2 --min-value 200k
 
 Usage:
-  linkedin-jobs [command]
+  myapp [command]
 
 Available Commands:
-  auth        Inspect your LinkedIn session
-  clear       Delete all jobs from the local database
+  auth        Inspect your configured session
+  clear       Delete all items from the local database
   completion  Generate the autocompletion script for the specified shell
   config      Manage your LLM provider connection and view settings
-  enrich      Enrich + fit-score one job, or all unenriched jobs (--all)
-  export      Export saved jobs to JSON, CSV, or Markdown
+  enrich      Enrich + fit-score one item, or all unenriched items (--all)
+  export      Export saved items to JSON, CSV, or Markdown
   help        Help about any command
-  hr          Research who to reach out to about a job (best contact + ranked list)
-  list        List saved jobs from the local database
-  profile     Manage your resume and preference knobs (drive fit scoring & hard filtering)
-  query       Offline full-text search over stored jobs (FTS5)
-  recommended Pull your personalized LinkedIn 'Recommended for you' job feed
-  score       Re-score all non-filtered jobs against your current resume + preferences
-  score-job   Fetch + fit-score a single LinkedIn job by its numeric ID
-  search      Search LinkedIn's public job board (anonymous, no session required)
-  serve       Serve a read-only web UI to browse all stored jobs
-  show        Show full details for a single saved job
-  stats       Aggregate stats over the local job database
-  tag         Set a job's pipeline status (new/saved/applied/rejected)
-  url         Score every job on a LinkedIn search/collection URL (paste from browser or job-alert email)
-  watch       Run a search and show only NEW jobs not seen before
+  hr          Research who to reach out to about an item (best contact + ranked list)
+  list        List saved items from the local database
+  profile     Manage your preferences (drive fit scoring & hard filtering)
+  query       Offline full-text search over stored items (FTS5)
+  recommended Pull your personalized 'Recommended for you' item feed
+  score       Re-score all non-filtered items against your current preferences
+  score-item  Fetch + fit-score a single item by its numeric ID
+  search      Search the public item board (anonymous, no session required)
+  serve       Serve a read-only web UI to browse all stored items
+  show        Show full details for a single saved item
+  stats       Aggregate stats over the local item database
+  tag         Set an item's pipeline status (new/saved/applied/rejected)
+  url         Score every item on a search/collection URL (paste from browser or alert email)
+  watch       Run a search and show only NEW items not seen before
 
 Flags:
-      --db string   path to the SQLite DB file (default: ~/linkedin-jobs/linkedin_jobs.db or $LJ_DB_PATH)
-  -h, --help        help for linkedin-jobs
+      --db string   path to the SQLite DB file (default: ~/myapp/myapp.db or $MYAPP_DB_PATH)
+  -h, --help        help for myapp
       --json        emit machine-readable JSON (agent-native output)
 
-Use "linkedin-jobs [command] --help" for more information about a command.
+Use "myapp [command] --help" for more information about a command.

@@ -9,14 +9,14 @@ describe('parseEnvBlock', () => {
       '__CLIK_ENV_BEGIN__\n' +
       'FOO=bar\n' +
       'PATH=/usr/local/bin:/usr/bin:/bin\n' +
-      'LJ_COOKIE=whatever=with=equals\n' +
+      'MY_TOKEN=whatever=with=equals\n' +
       'EMPTY=\n' +
       '__CLIK_ENV_END__\n' +
       'trailing junk'
     const env = parseEnvBlock(out)
     expect(env.FOO).toBe('bar')
     expect(env.PATH).toBe('/usr/local/bin:/usr/bin:/bin')
-    expect(env.LJ_COOKIE).toBe('whatever=with=equals')
+    expect(env.MY_TOKEN).toBe('whatever=with=equals')
     expect(env.EMPTY).toBe('')
     expect(env.some).toBeUndefined()
   })

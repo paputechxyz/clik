@@ -53,7 +53,7 @@ export function FlagPanel(): JSX.Element {
           <input
             type="text"
             className="flag-input"
-            placeholder={'e.g. "Staff Engineer" Toronto'}
+            placeholder="arg1 arg2, space separated (quote multi-word)"
             value={positionalArgs}
             onChange={(e) => setPositionalArgs(e.target.value)}
           />

@@ -1,29 +1,29 @@
-Searches LinkedIn's public (logged-out) job board and ingests results through
+Searches the public (logged-out) item board and ingests results through
 the same pipeline as 'recommended'. Works without a session; no login needed.
---top N caps the number of jobs processed end-to-end (detail fetch + LLM score).
-Jobs failing any active user gate (--remote/--hybrid/--min-salary) are dropped
+--top N caps the number of items processed end-to-end (detail fetch + LLM score).
+Items failing any active user gate (--remote/--hybrid/--min-value) are dropped
 in-memory after the detail fetch and never stored or scored.
 
 Examples:
-  linkedin-jobs search "Staff Engineer" Toronto --min-salary 200k
-  linkedin-jobs search "Senior Developer" "Remote, US" --top 3
-  linkedin-jobs search "Staff Engineer" Toronto --min-salary 160k --salary-currency CAD
+  myapp search "foo bar" arg2 --min-value 200k
+  myapp search "a b" "c d" --top 3
+  myapp search "foo bar" arg2 --min-value 160k --value-currency CAD
 
 Usage:
-  linkedin-jobs search [keywords] [location] [flags]
+  myapp search [keywords] [location] [flags]
 
 Flags:
-      --force-overwrite          re-parse and re-score jobs already in the DB (bypass dedup; overwrites existing values)
+      --force-overwrite          re-parse and re-score items already in the DB (bypass dedup; overwrites existing values)
   -h, --help                     help for search
-      --hybrid                   only keep hybrid-friendly jobs (combine with --remote for OR)
-      --min-salary string        only keep jobs paying at or above this (e.g. 200k)
+      --hybrid                   only keep hybrid-friendly items (combine with --remote for OR)
+      --min-value string         only keep items at or above this value (e.g. 200k)
       --no-detail                skip detail page fetching
       --no-filter                skip the hard preference filter
       --no-score                 skip LLM enrichment+fit-scoring
-      --remote                   only keep remote-friendly jobs
-      --salary-currency string   currency for --min-salary (ISO 4217, e.g. CAD); enables FX-aware filtering
-      --top int                  cap on number of jobs to fetch + process end-to-end (default 25)
+      --remote                   only keep remote-friendly items
+      --value-currency string    currency for --min-value (ISO 4217, e.g. CAD); enables FX-aware filtering
+      --top int                  cap on number of items to fetch + process end-to-end (default 25)
 
 Global Flags:
-      --db string   path to the SQLite DB file (default: ~/linkedin-jobs/linkedin_jobs.db or $LJ_DB_PATH)
+      --db string   path to the SQLite DB file (default: ~/myapp/myapp.db or $MYAPP_DB_PATH)
       --json        emit machine-readable JSON (agent-native output)

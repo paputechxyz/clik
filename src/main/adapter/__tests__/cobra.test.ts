@@ -16,7 +16,7 @@ describe('parseHelp - root (group)', () => {
   })
 
   it('extracts the usage line', () => {
-    expect(p.usage).toBe('linkedin-jobs [command]')
+    expect(p.usage).toBe('myapp [command]')
   })
 
   it('lists children with short descriptions', () => {
@@ -24,15 +24,16 @@ describe('parseHelp - root (group)', () => {
     expect(names).toContain('search')
     expect(names).toContain('serve')
     expect(names).toContain('config')
-    expect(names).toContain('score-job')
+    expect(names).toContain('score-item')
     // `recommended` is the longest-named command; cobra pads command names to
     // the longest width, leaving only a single space before its description.
     // The parser must still pick it up.
     expect(names).toContain('recommended')
     const recommended = p.children.find((c) => c.name === 'recommended')!
-    expect(recommended.short).toContain('personalized LinkedIn')
+    expect(recommended.short).toContain('personalized')
+    expect(recommended.short).toContain("'Recommended for you'")
     const search = p.children.find((c) => c.name === 'search')!
-    expect(search.short).toBe("Search LinkedIn's public job board (anonymous, no session required)")
+    expect(search.short).toBe('Search the public item board (anonymous, no session required)')
   })
 
   it('parses the root persistent flags as local flags (cobra puts them in Flags at root)', () => {
@@ -66,9 +67,9 @@ describe('parseHelp - search (leaf)', () => {
     expect(top?.usage).not.toContain('(default')
   })
 
-  it('types --min-salary and --salary-currency as string', () => {
-    expect(p.flags.find((f) => f.name === 'min-salary')?.type).toBe('string')
-    expect(p.flags.find((f) => f.name === 'salary-currency')?.type).toBe('string')
+  it('types --min-value and --value-currency as string', () => {
+    expect(p.flags.find((f) => f.name === 'min-value')?.type).toBe('string')
+    expect(p.flags.find((f) => f.name === 'value-currency')?.type).toBe('string')
   })
 
   it('types --remote/--hybrid/--no-detail as bool', () => {

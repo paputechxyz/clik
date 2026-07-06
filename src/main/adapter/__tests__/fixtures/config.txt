@@ -1,7 +1,7 @@
 Manage your LLM provider connection and view settings
 
 Usage:
-  linkedin-jobs config [command]
+  myapp config [command]
 
 Available Commands:
   llm         Connect an LLM provider (opencode / Claude / custom key)
@@ -12,7 +12,7 @@ Flags:
   -h, --help   help for config
 
 Global Flags:
-      --db string   path to the SQLite DB file (default: ~/linkedin-jobs/linkedin_jobs.db or $LJ_DB_PATH)
+      --db string   path to the SQLite DB file (default: ~/myapp/myapp.db or $MYAPP_DB_PATH)
       --json        emit machine-readable JSON (agent-native output)
 
-Use "linkedin-jobs config [command] --help" for more information about a command.
+Use "myapp config [command] --help" for more information about a command.

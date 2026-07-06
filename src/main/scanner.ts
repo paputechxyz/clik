@@ -3,7 +3,6 @@ import path from 'node:path'
 
 export const DEFAULT_CANDIDATES: string[] = Array.from(
   new Set([
-    'linkedin-jobs',
     'gh',
     'docker',
     'kubectl',
