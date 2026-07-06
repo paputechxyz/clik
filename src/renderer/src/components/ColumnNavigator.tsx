@@ -19,6 +19,11 @@ export function ColumnNavigator({ onAddCommand }: { onAddCommand: () => void }):
   const tree = useAppStore((s) => (selectedEntryId ? s.trees[selectedEntryId] : null))
   const discovering = useAppStore((s) => (selectedEntryId ? s.discovering[selectedEntryId] : false))
   const discoverError = useAppStore((s) => (selectedEntryId ? s.discoverError[selectedEntryId] : null))
+  const discoverProgress = useAppStore((s) => {
+    if (!selectedEntryId) return null
+    const entry = s.entries.find((e) => e.id === selectedEntryId)
+    return entry ? s.discoverProgress[entry.binaryPath] ?? null : null
+  })
   const selection = useAppStore((s) => s.selection)
   const selectEntry = useAppStore((s) => s.selectEntry)
   const selectCommand = useAppStore((s) => s.selectCommand)
@@ -114,54 +119,88 @@ export function ColumnNavigator({ onAddCommand }: { onAddCommand: () => void }):
     )
   })
 
-  if (tree) {
-    if (discovering) {
+  if (discovering) {
+    const pct = discoverProgress && discoverProgress.total > 0
+      ? Math.round((discoverProgress.done / discoverProgress.total) * 100)
+      : null
+    const barWidth = pct !== null ? `${pct}%` : undefined
+    panels.push({
+      key: 'loading',
+      title: 'Loading',
+      muted: true,
+      body: (
+        <div className="pane-empty">
+          <div className="discover-progress">
+            <span className="discover-spinner" aria-label="discovering" />
+            <span>
+              Discovering commands
+              {discoverProgress
+                ? ` — ${discoverProgress.done}/${discoverProgress.total}${pct !== null ? ` (${pct}%)` : ''}`
+                : '…'}
+            </span>
+          </div>
+          <div
+            className="discover-bar"
+            role="progressbar"
+            aria-valuenow={pct ?? 0}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <div
+              className={`discover-bar-fill${pct === null ? ' indeterminate' : ''}`}
+              style={pct === null ? undefined : { width: barWidth }}
+            />
+          </div>
+          {discoverProgress ? (
+            <div className="discover-hint">analyzing: {discoverProgress.current}</div>
+          ) : (
+            <div className="discover-hint">Running --help on each subcommand…</div>
+          )}
+          <div className="discover-hint">
+            Large CLIs (docker, kubectl) recursively walk hundreds of subcommands and can take 30–60s.
+          </div>
+        </div>
+      )
+    })
+  } else if (discoverError) {
+    panels.push({
+      key: 'error',
+      title: 'Error',
+      muted: true,
+      body: (
+        <>
+          <div className="pane-empty error-text">{discoverError}</div>
+          <button className="add-command" onClick={() => void selectEntry(selectedEntryId)}>
+            Retry
+          </button>
+        </>
+      )
+    })
+  } else if (tree) {
+    cmdColumns.forEach((col, i) => {
       panels.push({
-        key: 'loading',
-        title: 'Loading',
-        muted: true,
-        body: <div className="pane-empty">Discovering commands…</div>
-      })
-    } else if (discoverError) {
-      panels.push({
-        key: 'error',
-        title: 'Error',
-        muted: true,
+        key: `col-${i}`,
+        title: i === 0 ? 'Command' : 'Subcommand',
         body: (
-          <>
-            <div className="pane-empty error-text">{discoverError}</div>
-            <button className="add-command" onClick={() => void selectEntry(selectedEntryId)}>
-              Retry
-            </button>
-          </>
+          <ul className="cmd-list">
+            {col.items.map((item) => (
+              <li
+                key={item.name}
+                className={`cmd-item${item.name === col.selected ? ' selected' : ''}${
+                  item.isGroup ? ' group' : ''
+                }`}
+                onClick={() => selectCommand(col.depth, item.name)}
+                title={item.short}
+              >
+                <span className="cmd-name">{item.name}</span>
+                {item.isGroup && <span className="cmd-chevron">›</span>}
+                {item.short && <span className="cmd-short">{item.short}</span>}
+              </li>
+            ))}
+          </ul>
         )
       })
-    } else {
-      cmdColumns.forEach((col, i) => {
-        panels.push({
-          key: `col-${i}`,
-          title: i === 0 ? 'Command' : 'Subcommand',
-          body: (
-            <ul className="cmd-list">
-              {col.items.map((item) => (
-                <li
-                  key={item.name}
-                  className={`cmd-item${item.name === col.selected ? ' selected' : ''}${
-                    item.isGroup ? ' group' : ''
-                  }`}
-                  onClick={() => selectCommand(col.depth, item.name)}
-                  title={item.short}
-                >
-                  <span className="cmd-name">{item.name}</span>
-                  {item.isGroup && <span className="cmd-chevron">›</span>}
-                  {item.short && <span className="cmd-short">{item.short}</span>}
-                </li>
-              ))}
-            </ul>
-          )
-        })
-      })
-    }
+    })
   } else {
     panels.push({
       key: 'empty',

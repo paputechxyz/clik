@@ -23,7 +23,12 @@ export function registerIpc(getWin: () => BrowserWindow | null): IpcCleanup {
     getWin()?.webContents.send('pty:event', evt)
   }, () => shellEnv.current)
 
-  ipcMain.handle('cli:discover', (_e, binaryPath: string) => discoverTree(binaryPath))
+  ipcMain.handle('cli:discover', (e, binaryPath: string) => {
+    console.log(`[ipc] cli:discover ${binaryPath}`)
+    return discoverTree(binaryPath, (p) => {
+      e.sender.send('cli:discover:progress', { binaryPath, ...p })
+    })
+  })
   ipcMain.handle('cli:discover-command', (_e, binaryPath: string, cmdPath: string[]): Promise<CommandNode> =>
     discoverCommand(binaryPath, cmdPath)
   )

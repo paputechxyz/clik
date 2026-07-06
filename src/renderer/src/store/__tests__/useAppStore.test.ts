@@ -33,6 +33,7 @@ describe('store discovery cache + refresh', () => {
       trees: {},
       discovering: {},
       discoverError: {},
+      discoverProgress: {},
       selectedEntryId: null,
       selection: [],
       flagValues: {},

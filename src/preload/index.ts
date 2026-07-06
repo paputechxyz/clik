@@ -4,6 +4,13 @@ import type { ClikApi } from '../shared/types'
 const api: ClikApi = {
   discover: (binaryPath) => ipcRenderer.invoke('cli:discover', binaryPath),
   discoverCommand: (binaryPath, cmdPath) => ipcRenderer.invoke('cli:discover-command', binaryPath, cmdPath),
+  onDiscoverProgress: (cb) => {
+    const handler = (_e: unknown, data: Parameters<typeof cb>[0]) => cb(data)
+    ipcRenderer.on('cli:discover:progress', handler)
+    return () => {
+      ipcRenderer.removeListener('cli:discover:progress', handler)
+    }
+  },
   pickBinary: () => ipcRenderer.invoke('dialog:pickBinary'),
   shellEnv: {
     status: () => ipcRenderer.invoke('shell-env:status'),

@@ -138,17 +138,33 @@ type StoreGet = () => AppState
 async function runDiscover(get: StoreGet, set: StoreSet, id: string): Promise<void> {
   const entry = get().entries.find((e) => e.id === id)
   if (!entry) return
+  console.log(`[store] discover start: ${entry.name} (${entry.binaryPath})`)
   set((s) => ({
     discovering: { ...s.discovering, [id]: true },
-    discoverError: { ...s.discoverError, [id]: null }
+    discoverError: { ...s.discoverError, [id]: null },
+    discoverProgress: { ...s.discoverProgress, [entry.binaryPath]: null }
   }))
   try {
     const tree = await window.clik.discover(entry.binaryPath)
-    set((s) => ({ trees: { ...s.trees, [id]: tree }, discovering: { ...s.discovering, [id]: false } }))
+    const count = (n: CommandNode, acc = 0): number =>
+      n.children.reduce((a, c) => count(c, a), acc) + 1
+    console.log(
+      `[store] discover ok: ${entry.name} — ${count(tree.root)} nodes, ${tree.root.children.length} top-level`
+    )
+    set((s) => ({
+      trees: { ...s.trees, [id]: tree },
+      discovering: { ...s.discovering, [id]: false },
+      discoverProgress: { ...s.discoverProgress, [entry.binaryPath]: null }
+    }))
   } catch (err) {
+    console.error(`[store] discover error: ${entry.name}:`, err)
     set((s) => ({
       discovering: { ...s.discovering, [id]: false },
-      discoverError: { ...s.discoverError, [id]: err instanceof Error ? err.message : String(err) }
+      discoverError: {
+        ...s.discoverError,
+        [id]: err instanceof Error ? err.message : String(err)
+      },
+      discoverProgress: { ...s.discoverProgress, [entry.binaryPath]: null }
     }))
   }
 }
@@ -171,6 +187,7 @@ interface AppState {
   trees: Record<string, CommandTree>
   discovering: Record<string, boolean>
   discoverError: Record<string, string | null>
+  discoverProgress: Record<string, { done: number; total: number; current: string } | null>
   selectedEntryId: string | null
   selection: string[]
   flagValues: Record<string, unknown>
@@ -221,6 +238,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   trees: {},
   discovering: {},
   discoverError: {},
+  discoverProgress: {},
   selectedEntryId: persisted?.selectedEntryId ?? null,
   selection: [],
   flagValues: {},
@@ -709,4 +727,18 @@ function graftIntoTree(tree: CommandTree, cmdPath: string[], node: CommandNode):
   if (parent.children.some((c) => c.name === leafName)) return tree
   parent.children.push(node)
   return { ...tree, root: newRoot }
+}
+
+// Stream per-binary discovery progress from the main process so the UI can
+// show "12/70: run" instead of a bare spinner. Keyed by binaryPath (what the
+// main process knows); the renderer looks it up via the selected entry's path.
+if (typeof window !== 'undefined' && window.clik?.onDiscoverProgress) {
+  window.clik.onDiscoverProgress((p) => {
+    useAppStore.setState((s) => ({
+      discoverProgress: {
+        ...s.discoverProgress,
+        [p.binaryPath]: { done: p.done, total: p.total, current: p.current }
+      }
+    }))
+  })
 }

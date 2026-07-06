@@ -78,9 +78,17 @@ export interface PtyEvent {
 
 export type MenuAction = 'new-tab' | 'close-tab'
 
+export interface DiscoverProgress {
+  binaryPath: string
+  done: number
+  total: number
+  current: string
+}
+
 export interface ClikApi {
   discover: (binaryPath: string) => Promise<CommandTree>
   discoverCommand: (binaryPath: string, cmdPath: string[]) => Promise<CommandNode>
+  onDiscoverProgress: (cb: (p: DiscoverProgress) => void) => () => void
   pickBinary: () => Promise<string | null>
   shellEnv: {
     status: () => Promise<ShellEnvStatus>

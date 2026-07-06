@@ -188,6 +188,74 @@ body {
   font-size: 12px;
 }
 
+.pane-empty .discover-progress {
+  margin-top: 8px;
+  color: #d6d6d6;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.discover-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #3a3a3a;
+  border-top-color: #4a9e6a;
+  border-radius: 50%;
+  animation: clik-spin 0.8s linear infinite;
+  display: inline-block;
+  flex: 0 0 auto;
+}
+
+@keyframes clik-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.discover-bar {
+  margin-top: 10px;
+  height: 4px;
+  width: 100%;
+  background: #2e2e2f;
+  border: 1px solid #333334;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.discover-bar-fill {
+  height: 100%;
+  background: #4a9e6a;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.discover-bar-fill.indeterminate {
+  width: 30%;
+  animation: clik-bar-indeterminate 1.4s ease-in-out infinite;
+}
+
+@keyframes clik-bar-indeterminate {
+  0% {
+    margin-left: -30%;
+  }
+  50% {
+    margin-left: 100%;
+  }
+  100% {
+    margin-left: 100%;
+  }
+}
+
+.pane-empty .discover-hint {
+  margin-top: 6px;
+  color: #6a6a6a;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .add-command {
   margin: 10px 12px;
   display: inline-flex;
