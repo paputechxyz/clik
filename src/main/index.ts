@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, shell, nativeImage } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
 import { registerIpc, type IpcCleanup } from './ipc'
@@ -46,6 +46,9 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  if (process.platform === 'darwin' && !app.isPackaged && fs.existsSync(LOGO)) {
+    app.dock?.setIcon(nativeImage.createFromPath(LOGO))
+  }
   ipc = registerIpc(() => win)
   buildMenu(() => win)
   createWindow()
