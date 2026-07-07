@@ -8,7 +8,7 @@ import type {
   SavedCommandItem,
   HistoryItem
 } from '../../../shared/types'
-import { buildArgv, commandPreview, shellQuote, shellSplit } from '../lib/buildArgv'
+import { buildArgv, commandPreview, configSignature, shellQuote, shellSplit } from '../lib/buildArgv'
 import { parseCommandTokens } from '../lib/parseCommand'
 
 export type { SavedCommandItem, HistoryItem }
@@ -443,6 +443,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!entry || !tree) return
     const node = findNode(tree, selection)
     if (!node || node.isGroup) return
+    // No-op when an identical snapshot is already saved (the bookmark is green).
+    const sig = configSignature(flagValues, positionalArgs)
+    if (
+      get().saved.some(
+        (it) =>
+          it.entryId === selectedEntryId &&
+          it.selection.join('/') === selection.join('/') &&
+          configSignature(it.flags, it.positional) === sig
+      )
+    )
+      return
     const argv = buildArgv({
       commandPath: selection,
       flags: [...node.flags, ...node.inheritedFlags],
@@ -450,13 +461,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       positionalArgs: shellSplit(positionalArgs)
     })
     const preview = commandPreview(tree.binaryName, argv)
-    const name = [tree.binaryName, ...selection].join(' ').trim()
+    const baseName = [tree.binaryName, ...selection].join(' ').trim()
     const item: SavedCommandItem = {
       id:
         typeof crypto !== 'undefined' && 'randomUUID' in crypto
           ? crypto.randomUUID()
           : `${Date.now()}-${Math.random()}`,
-      name,
+      name: baseName,
       entryId: selectedEntryId,
       entryName: entry.name,
       binaryName: tree.binaryName,
@@ -467,11 +478,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       createdAt: Date.now()
     }
     set((s) => {
-      // dedupe by entryId + selection, keeping the newest snapshot
-      const filtered = s.saved.filter(
-        (it) => !(it.entryId === item.entryId && it.selection.join('/') === item.selection.join('/'))
-      )
-      const saved = [item, ...filtered].sort((a, b) => a.name.localeCompare(b.name))
+      // Always keep a new copy (never overwrite). Disambiguate the label when a
+      // saved item already shares this name so each snapshot is identifiable.
+      const taken = new Set(s.saved.map((it) => it.name))
+      let name = item.name
+      if (taken.has(name)) {
+        let n = 2
+        while (taken.has(`${baseName} (${n})`)) n++
+        name = `${baseName} (${n})`
+      }
+      const namedItem = name === item.name ? item : { ...item, name }
+      const saved = [namedItem, ...s.saved].sort((a, b) => a.name.localeCompare(b.name))
       persistLibrary(saved, s.history)
       return { saved }
     })

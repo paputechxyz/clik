@@ -15,15 +15,22 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
+    // Read the terminal background from the shared CSS token so the xterm
+    // canvas always matches the .term-host padding region (no visible frame).
+    const termBg = getComputedStyle(container).getPropertyValue('--term-bg').trim() || '#1c1d21'
     const term = new Terminal({
-      fontFamily: "'SF Mono', Menlo, monospace",
+      fontFamily: "'SF Mono', 'JetBrains Mono', Menlo, monospace",
       fontSize: 12,
       lineHeight: 1.3,
       theme: {
-        background: '#1e1e1e',
-        foreground: '#d6d6d6',
-        cursor: '#d6d6d6',
-        selectionBackground: '#264f78'
+        // Matched to the polished design tokens (--term-bg / --fg / --accent).
+        // xterm's theme API takes RGB strings, so these are the sRGB
+        // equivalents of the OKLCH tokens in styles.css.
+        background: termBg,
+        foreground: '#dcdde0',
+        cursor: '#4a78f0',
+        cursorAccent: '#ffffff',
+        selectionBackground: '#2a3a5c'
       },
       scrollback: 5000,
       convertEol: true,

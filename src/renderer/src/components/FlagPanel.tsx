@@ -1,8 +1,8 @@
 import type { CommandNode } from '../../../shared/types'
 import { useAppStore } from '../store/useAppStore'
-import { buildArgv, commandPreview, shellSplit } from '../lib/buildArgv'
+import { buildArgv, commandPreviewTokens, configSignature, shellSplit } from '../lib/buildArgv'
 import { FlagField } from './FlagWidgets'
-import { BookmarkIcon } from './icons'
+import { BookmarkIcon, PlayIcon } from './icons'
 
 export function FlagPanel(): JSX.Element {
   const selectedEntryId = useAppStore((s) => s.selectedEntryId)
@@ -10,6 +10,7 @@ export function FlagPanel(): JSX.Element {
   const selection = useAppStore((s) => s.selection)
   const flagValues = useAppStore((s) => s.flagValues)
   const positionalArgs = useAppStore((s) => s.positionalArgs)
+  const saved = useAppStore((s) => s.saved)
   const setFlagValue = useAppStore((s) => s.setFlagValue)
   const setPositionalArgs = useAppStore((s) => s.setPositionalArgs)
   const runCommand = useAppStore((s) => s.runCommand)
@@ -30,7 +31,7 @@ export function FlagPanel(): JSX.Element {
     return <EmptyFlags text="Select a leaf command to edit its flags." />
   }
 
-  const preview = commandPreview(
+  const tokens = commandPreviewTokens(
     tree.binaryName,
     buildArgv({
       commandPath: selection,
@@ -38,6 +39,16 @@ export function FlagPanel(): JSX.Element {
       values: flagValues,
       positionalArgs: shellSplit(positionalArgs)
     })
+  )
+
+  // The bookmark turns green when the current editor state exactly matches a
+  // saved snapshot for this command (entry + path + flags + positional).
+  const currentSig = configSignature(flagValues, positionalArgs)
+  const isSaved = saved.some(
+    (it) =>
+      it.entryId === selectedEntryId &&
+      it.selection.join('/') === selection.join('/') &&
+      configSignature(it.flags, it.positional) === currentSig
   )
 
   return (
@@ -76,17 +87,24 @@ export function FlagPanel(): JSX.Element {
       </div>
 
       <div className="flag-footer">
-        <code className="cmd-preview">{preview}</code>
+        <code className="cmd-preview">
+          {tokens.map((t, idx) => (
+            <span key={idx} className={`tok-${t.kind}`}>
+              {t.text}
+              {idx < tokens.length - 1 ? ' ' : ''}
+            </span>
+          ))}
+        </code>
         <div className="flag-footer-actions">
           <button
-            className="ghost-btn save-btn"
-            title="Save this command (with current flags) to the Saved panel"
-            onClick={() => saveCurrentCommand()}
+            className={`ghost-btn save-btn${isSaved ? ' saved' : ''}`}
+            title={isSaved ? 'Already saved' : 'Save this command (with current flags) to the Saved panel'}
+            onClick={() => { if (!isSaved) saveCurrentCommand() }}
           >
-            <BookmarkIcon /> Save
+            <BookmarkIcon filled={isSaved} /> {isSaved ? 'Saved' : 'Save'}
           </button>
           <button className="run-btn" onClick={() => void runCommand()}>
-            Run
+            <PlayIcon /> Run
           </button>
         </div>
       </div>
