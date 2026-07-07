@@ -9,6 +9,7 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const writtenRef = useRef(0)
+  const restoringRef = useRef(true)
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
@@ -36,12 +37,18 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
     } catch {
       // container not sized yet; ResizeObserver will retry
     }
-    term.write(run.output)
+    restoringRef.current = true
+    term.write(run.output, () => {
+      restoringRef.current = false
+    })
     writtenRef.current = run.output.length
     termRef.current = term
     setReady(true)
 
-    term.onData((d) => window.clik.pty.input(run.id, d))
+    term.onData((d) => {
+      if (restoringRef.current) return
+      window.clik.pty.input(run.id, d)
+    })
     term.onResize(({ cols, rows }) => window.clik.pty.resize(run.id, cols, rows))
     window.clik.pty.resize(run.id, term.cols, term.rows)
     term.focus()
@@ -71,8 +78,11 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
     if (!term || !ready) return
     const plan = computeWriteDelta(writtenRef.current, run.output)
     if (plan.kind === 'full') {
+      restoringRef.current = true
       term.reset()
-      term.write(plan.text)
+      term.write(plan.text, () => {
+        restoringRef.current = false
+      })
       writtenRef.current = plan.written
     } else if (plan.kind === 'delta') {
       term.write(plan.text)

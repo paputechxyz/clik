@@ -64,7 +64,7 @@ export function RunTabs({ onCollapse }: RunTabsProps): JSX.Element {
         </button>
       </div>
 
-      {active ? <RunPane run={active} /> : null}
+      {active ? <RunPane key={active.id} run={active} /> : null}
     </section>
   )
 }
