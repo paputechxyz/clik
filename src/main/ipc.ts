@@ -1,12 +1,15 @@
 import { ipcMain, dialog } from 'electron'
 import os from 'node:os'
+import nodePath from 'node:path'
+import fs from 'node:fs'
 import type { BrowserWindow, OpenDialogOptions } from 'electron'
 import { Registry } from './registry'
+import { TreeCache } from './tree-cache'
 import { discoverTree, discoverCommand } from './adapter'
 import { ShellEnvCache } from './shell-env'
 import { resolveOnPath, scanCandidates, DEFAULT_CANDIDATES } from './scanner'
 import { PtyManager } from './pty'
-import type { CliEntry, CommandNode, PtyEvent, PtyOpenRequest } from '../shared/types'
+import type { CliEntry, CommandNode, CommandTree, PtyEvent, PtyOpenRequest } from '../shared/types'
 
 export interface IpcCleanup {
   stopAll: () => void
@@ -14,6 +17,7 @@ export interface IpcCleanup {
 
 export function registerIpc(getWin: () => BrowserWindow | null): IpcCleanup {
   const registry = new Registry()
+  const treeCache = new TreeCache()
   const shellEnv = new ShellEnvCache()
   void shellEnv.refresh().catch(() => {
     // fallback: shellEnv.current stays process.env; surfaced via shell-env:status
@@ -23,11 +27,34 @@ export function registerIpc(getWin: () => BrowserWindow | null): IpcCleanup {
     getWin()?.webContents.send('pty:event', evt)
   }, () => shellEnv.current)
 
-  ipcMain.handle('cli:discover', (e, binaryPath: string) => {
-    console.log(`[ipc] cli:discover ${binaryPath}`)
-    return discoverTree(binaryPath, (p) => {
+  ipcMain.handle('cli:discover', async (e, binaryPath: string, forceFresh?: boolean): Promise<CommandTree> => {
+    console.log(`[ipc] cli:discover ${binaryPath}${forceFresh ? ' (force)' : ''}`)
+
+    if (!forceFresh) {
+      try {
+        const st = fs.statSync(binaryPath)
+        const cached = treeCache.get(binaryPath, st.mtimeMs)
+        if (cached) {
+          console.log(`[discover] ${nodePath.basename(binaryPath)} — cache hit`)
+          return cached
+        }
+      } catch {
+        // stat failed; fall through to fresh discover (which will also fail)
+      }
+    }
+
+    const tree = await discoverTree(binaryPath, (p) => {
       e.sender.send('cli:discover:progress', { binaryPath, ...p })
     })
+
+    try {
+      const st = fs.statSync(binaryPath)
+      treeCache.set(binaryPath, st.mtimeMs, tree)
+    } catch {
+      // binary vanished or unstatable; skip caching
+    }
+
+    return tree
   })
   ipcMain.handle('cli:discover-command', (_e, binaryPath: string, cmdPath: string[]): Promise<CommandNode> =>
     discoverCommand(binaryPath, cmdPath)

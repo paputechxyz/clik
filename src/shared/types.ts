@@ -86,7 +86,7 @@ export interface DiscoverProgress {
 }
 
 export interface ClikApi {
-  discover: (binaryPath: string) => Promise<CommandTree>
+  discover: (binaryPath: string, forceFresh?: boolean) => Promise<CommandTree>
   discoverCommand: (binaryPath: string, cmdPath: string[]) => Promise<CommandNode>
   onDiscoverProgress: (cb: (p: DiscoverProgress) => void) => () => void
   pickBinary: () => Promise<string | null>

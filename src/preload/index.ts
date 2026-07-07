@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { ClikApi } from '../shared/types'
 
 const api: ClikApi = {
-  discover: (binaryPath) => ipcRenderer.invoke('cli:discover', binaryPath),
+  discover: (binaryPath, forceFresh) => ipcRenderer.invoke('cli:discover', binaryPath, forceFresh),
   discoverCommand: (binaryPath, cmdPath) => ipcRenderer.invoke('cli:discover-command', binaryPath, cmdPath),
   onDiscoverProgress: (cb) => {
     const handler = (_e: unknown, data: Parameters<typeof cb>[0]) => cb(data)

@@ -135,17 +135,17 @@ function findNode(tree: CommandTree, selection: string[]): CommandNode | null {
 type StoreSet = (partial: Partial<AppState> | ((s: AppState) => Partial<AppState>)) => void
 type StoreGet = () => AppState
 
-async function runDiscover(get: StoreGet, set: StoreSet, id: string): Promise<void> {
+async function runDiscover(get: StoreGet, set: StoreSet, id: string, forceFresh = false): Promise<void> {
   const entry = get().entries.find((e) => e.id === id)
   if (!entry) return
-  console.log(`[store] discover start: ${entry.name} (${entry.binaryPath})`)
+  console.log(`[store] discover start: ${entry.name} (${entry.binaryPath})${forceFresh ? ' (force)' : ''}`)
   set((s) => ({
     discovering: { ...s.discovering, [id]: true },
     discoverError: { ...s.discoverError, [id]: null },
     discoverProgress: { ...s.discoverProgress, [entry.binaryPath]: null }
   }))
   try {
-    const tree = await window.clik.discover(entry.binaryPath)
+    const tree = await window.clik.discover(entry.binaryPath, forceFresh)
     const count = (n: CommandNode, acc = 0): number =>
       n.children.reduce((a, c) => count(c, a), acc) + 1
     console.log(
@@ -334,7 +334,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       delete trees[targetId]
       return { trees }
     })
-    await runDiscover(get, set, targetId)
+    await runDiscover(get, set, targetId, true)
     // re-apply current selection's flags after re-discover
     if (targetId === get().selectedEntryId) {
       applySelectionToFlags(get, set, targetId, get().selection)
