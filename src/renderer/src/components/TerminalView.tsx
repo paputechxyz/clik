@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import type { Run } from '../store/useAppStore'
 import { computeWriteDelta } from '../lib/term-delta'
@@ -38,6 +39,11 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
     })
     const fit = new FitAddon()
     term.loadAddon(fit)
+    // Detect http(s) URLs in PTY output and open them via shell.openExternal
+    // (the main process intercepts window.open for this purpose). A custom
+    // handler is needed because the addon's default opener calls window.open()
+    // with no URL, which Electron routes to about:blank.
+    term.loadAddon(new WebLinksAddon((_e, uri) => window.open(uri, '_blank')))
     term.open(container)
     try {
       fit.fit()
