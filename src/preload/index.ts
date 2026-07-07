@@ -26,6 +26,10 @@ const api: ClikApi = {
     update: (entry) => ipcRenderer.invoke('registry:update', entry),
     remove: (id) => ipcRenderer.invoke('registry:remove', id)
   },
+  library: {
+    get: () => ipcRenderer.invoke('library:get'),
+    save: (data) => ipcRenderer.invoke('library:save', data)
+  },
   pty: {
     open: (req) => ipcRenderer.invoke('pty:open', req),
     openShell: () => ipcRenderer.invoke('pty:openShell'),

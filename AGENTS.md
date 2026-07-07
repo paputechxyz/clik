@@ -42,10 +42,11 @@ present and that the arch matches.
 - `shell-env:status` / `shell-env:refresh` (login+interactive shell env cache)
 - `scan:resolve` (name -> path|null) / `scan:suggest` (names? -> {name,path}[])
 - `registry:list|add|update|remove`
+- `library:get` (-> {saved,history}) / `library:save` ({saved,history}) — persisted saved + history commands at `userData/library.json`
 - `pty:open` (PtyOpenRequest) -> id / `pty:openShell` -> id (login `$SHELL -l` at homedir)
 - `pty:input` / `pty:resize` (send, fire-and-forget — one per keystroke/resize)
 - `pty:kill` (id) ; events stream via `pty:event` {id, channel:'data'|'exit', payload}
-- `menu:action` (main -> renderer) 'new-tab' | 'close-tab' (Cmd+T / Cmd+W)
+- `menu:action` (main -> renderer) 'new-tab' | 'close-tab' | 'clear-tab' (Cmd+T / Cmd+W / Cmd+K)
 
 ## Terminal model
 

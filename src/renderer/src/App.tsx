@@ -10,9 +10,11 @@ import './types'
 
 export function App(): JSX.Element {
   const loadEntries = useAppStore((s) => s.loadEntries)
+  const loadLibrary = useAppStore((s) => s.loadLibrary)
   const handlePtyEvent = useAppStore((s) => s.handlePtyEvent)
   const openShellTab = useAppStore((s) => s.openShellTab)
   const closeRun = useAppStore((s) => s.closeRun)
+  const clearRun = useAppStore((s) => s.clearRun)
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -21,7 +23,8 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     void loadEntries()
-  }, [loadEntries])
+    void loadLibrary()
+  }, [loadEntries, loadLibrary])
 
   useEffect(() => {
     const offPty = window.clik.pty.onEvent(handlePtyEvent)
@@ -31,13 +34,16 @@ export function App(): JSX.Element {
       } else if (action === 'close-tab') {
         const id = useAppStore.getState().activeRunId
         if (id) void closeRun(id)
+      } else if (action === 'clear-tab') {
+        const id = useAppStore.getState().activeRunId
+        if (id) clearRun(id)
       }
     })
     return () => {
       offPty()
       offMenu()
     }
-  }, [handlePtyEvent, openShellTab, closeRun])
+  }, [handlePtyEvent, openShellTab, closeRun, clearRun])
 
   useEffect(() => {
     const el = bodyRef.current

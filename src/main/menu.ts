@@ -22,6 +22,11 @@ export function buildMenu(getWin: () => BrowserWindow | null): void {
           label: 'Close Tab',
           accelerator: 'CmdOrCtrl+W',
           click: () => send('close-tab')
+        },
+        {
+          label: 'Clear Terminal',
+          accelerator: 'CmdOrCtrl+K',
+          click: () => send('clear-tab')
         }
       ]
     },

@@ -5,11 +5,12 @@ import fs from 'node:fs'
 import type { BrowserWindow, OpenDialogOptions } from 'electron'
 import { Registry } from './registry'
 import { TreeCache } from './tree-cache'
+import { Library } from './library'
 import { discoverTree, discoverCommand } from './adapter'
 import { ShellEnvCache } from './shell-env'
 import { resolveOnPath, scanCandidates, DEFAULT_CANDIDATES } from './scanner'
 import { PtyManager } from './pty'
-import type { CliEntry, CommandNode, CommandTree, PtyEvent, PtyOpenRequest } from '../shared/types'
+import type { CliEntry, CommandNode, CommandTree, LibraryData, PtyEvent, PtyOpenRequest } from '../shared/types'
 
 export interface IpcCleanup {
   stopAll: () => void
@@ -18,6 +19,7 @@ export interface IpcCleanup {
 export function registerIpc(getWin: () => BrowserWindow | null): IpcCleanup {
   const registry = new Registry()
   const treeCache = new TreeCache()
+  const library = new Library()
   const shellEnv = new ShellEnvCache()
   void shellEnv.refresh().catch(() => {
     // fallback: shellEnv.current stays process.env; surfaced via shell-env:status
@@ -100,6 +102,11 @@ export function registerIpc(getWin: () => BrowserWindow | null): IpcCleanup {
   ipcMain.handle('registry:add', (_e, entry: Omit<CliEntry, 'id'>) => registry.add(entry))
   ipcMain.handle('registry:update', (_e, entry: CliEntry) => registry.update(entry))
   ipcMain.handle('registry:remove', (_e, id: string) => registry.remove(id))
+
+  ipcMain.handle('library:get', () => library.get())
+  ipcMain.handle('library:save', (_e, data: LibraryData) => {
+    library.set(data)
+  })
 
   ipcMain.handle('pty:open', (_e, req: PtyOpenRequest) => ptys.open(req))
   ipcMain.handle('pty:openShell', () =>

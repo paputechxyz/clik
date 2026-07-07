@@ -1,7 +1,17 @@
 import { create } from 'zustand'
-import type { CommandTree, CommandNode, Flag, CliEntry, PtyEvent } from '../../../shared/types'
+import type {
+  CommandTree,
+  CommandNode,
+  Flag,
+  CliEntry,
+  PtyEvent,
+  SavedCommandItem,
+  HistoryItem
+} from '../../../shared/types'
 import { buildArgv, commandPreview, shellQuote, shellSplit } from '../lib/buildArgv'
 import { parseCommandTokens } from '../lib/parseCommand'
+
+export type { SavedCommandItem, HistoryItem }
 
 export type RunStatus = 'running' | 'exited'
 export type RunMode = 'shell' | 'command'
@@ -17,37 +27,11 @@ export interface Run {
   startedAt: number
 }
 
-export interface SavedCommandItem {
-  id: string
-  name: string
-  entryId: string
-  entryName: string
-  binaryName: string
-  selection: string[]
-  flags: Record<string, unknown>
-  positional: string
-  preview: string
-  createdAt: number
-}
-
-export interface HistoryItem {
-  id: string
-  entryId: string
-  entryName: string
-  binaryName: string
-  selection: string[]
-  flags: Record<string, unknown>
-  positional: string
-  preview: string
-  createdAt: number
-}
-
 const MAX_OUTPUT = 1_000_000
 const MAX_HISTORY = 200
 
 // ---- Flag persistence (Task 5) -------------------------------------------
 const PERSIST_KEY = 'clik-session-v1'
-const LIBRARY_KEY = 'clik-library-v1'
 
 interface SavedCommand {
   flags: Record<string, unknown>
@@ -57,11 +41,6 @@ interface PersistedSession {
   selectedEntryId: string | null
   selections: Record<string, string[]> // entryId -> command path
   commands: Record<string, SavedCommand> // `${entryId}::${path.join('/')}` -> values
-}
-
-interface PersistedLibrary {
-  saved: SavedCommandItem[]
-  history: HistoryItem[]
 }
 
 function commandKey(entryId: string, selection: string[]): string {
@@ -86,26 +65,13 @@ function savePersisted(s: PersistedSession): void {
   }
 }
 
-function loadLibrary(): { saved: SavedCommandItem[]; history: HistoryItem[] } {
-  try {
-    const raw = localStorage.getItem(LIBRARY_KEY)
-    if (!raw) return { saved: [], history: [] }
-    const parsed = JSON.parse(raw) as Partial<PersistedLibrary>
-    return {
-      saved: Array.isArray(parsed.saved) ? parsed.saved : [],
-      history: Array.isArray(parsed.history) ? parsed.history : []
-    }
-  } catch {
-    return { saved: [], history: [] }
-  }
-}
-
-function saveLibrary(saved: SavedCommandItem[], history: HistoryItem[]): void {
-  try {
-    localStorage.setItem(LIBRARY_KEY, JSON.stringify({ saved, history }))
-  } catch {
-    // ignore
-  }
+// Persist the library (saved + history) to the main process, which writes it
+// to userData/library.json so it survives restarts (unlike renderer localStorage,
+// which is scoped per-origin and lost between dev/packaged builds).
+function persistLibrary(saved: SavedCommandItem[], history: HistoryItem[]): void {
+  void window.clik.library.save({ saved, history }).catch(() => {
+    // ignore — best-effort; main process is the source of truth on next launch
+  })
 }
 
 function initFlagValue(f: Flag): unknown {
@@ -205,6 +171,7 @@ interface AppState {
   history: HistoryItem[]
 
   loadEntries: () => Promise<void>
+  loadLibrary: () => Promise<void>
   addEntry: (entry: Omit<CliEntry, 'id'>) => Promise<void>
   updateEntry: (entry: CliEntry) => Promise<void>
   removeEntry: (id: string) => Promise<void>
@@ -217,6 +184,7 @@ interface AppState {
   openShellTab: () => Promise<void>
   closeRun: (id: string) => Promise<void>
   setActiveRun: (id: string) => void
+  clearRun: (id: string) => void
   handlePtyEvent: (e: PtyEvent) => void
   saveCurrentCommand: () => void
   removeSaved: (id: string) => void
@@ -231,7 +199,6 @@ interface AppState {
 }
 
 const persisted = loadPersisted()
-const libraryInitial = loadLibrary()
 
 export const useAppStore = create<AppState>((set, get) => ({
   entries: [],
@@ -248,8 +215,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   activeRunId: null,
   selections: persisted?.selections ?? {},
   commands: persisted?.commands ?? {},
-  saved: libraryInitial.saved,
-  history: libraryInitial.history,
+  saved: [],
+  history: [],
 
   async loadEntries() {
     const entries = await window.clik.registry.list()
@@ -269,6 +236,18 @@ export const useAppStore = create<AppState>((set, get) => ({
         ? entries[0].id
         : null
     if (targetId) await get().selectEntry(targetId)
+  },
+
+  async loadLibrary() {
+    try {
+      const data = await window.clik.library.get()
+      set({
+        saved: Array.isArray(data.saved) ? data.saved : [],
+        history: Array.isArray(data.history) ? data.history : []
+      })
+    } catch {
+      // leave empty defaults; main process is unreachable (rare)
+    }
   },
 
   async addEntry(entry) {
@@ -295,7 +274,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       delete selections[id]
       const saved = s.saved.filter((it) => it.entryId !== id)
       const history = s.history.filter((it) => it.entryId !== id)
-      saveLibrary(saved, history)
+      persistLibrary(saved, history)
       return { entries, selections, saved, history }
     })
     if (get().selectedEntryId === id) {
@@ -413,7 +392,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     set((s) => {
       const history = [historyItem, ...s.history].slice(0, MAX_HISTORY)
-      saveLibrary(s.saved, history)
+      persistLibrary(s.saved, history)
       return { history }
     })
   },
@@ -447,6 +426,13 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setActiveRun(id) {
     set({ activeRunId: id })
+  },
+
+  clearRun(id) {
+    set((s) => ({
+      runs: s.runs.map((r) => (r.id === id ? { ...r, output: '' } : r))
+    }))
+    window.clik.pty.input(id, '\x0c')
   },
 
   saveCurrentCommand() {
@@ -486,7 +472,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         (it) => !(it.entryId === item.entryId && it.selection.join('/') === item.selection.join('/'))
       )
       const saved = [item, ...filtered].sort((a, b) => a.name.localeCompare(b.name))
-      saveLibrary(saved, s.history)
+      persistLibrary(saved, s.history)
       return { saved }
     })
   },
@@ -494,14 +480,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   removeSaved(id) {
     set((s) => {
       const saved = s.saved.filter((it) => it.id !== id)
-      saveLibrary(saved, s.history)
+      persistLibrary(saved, s.history)
       return { saved }
     })
   },
 
   clearHistory() {
     set((s) => {
-      saveLibrary(s.saved, [])
+      persistLibrary(s.saved, [])
       return { history: [] }
     })
   },

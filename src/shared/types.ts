@@ -76,13 +76,43 @@ export interface PtyEvent {
   payload: unknown
 }
 
-export type MenuAction = 'new-tab' | 'close-tab'
+export type MenuAction = 'new-tab' | 'close-tab' | 'clear-tab'
 
 export interface DiscoverProgress {
   binaryPath: string
   done: number
   total: number
   current: string
+}
+
+export interface SavedCommandItem {
+  id: string
+  name: string
+  entryId: string
+  entryName: string
+  binaryName: string
+  selection: string[]
+  flags: Record<string, unknown>
+  positional: string
+  preview: string
+  createdAt: number
+}
+
+export interface HistoryItem {
+  id: string
+  entryId: string
+  entryName: string
+  binaryName: string
+  selection: string[]
+  flags: Record<string, unknown>
+  positional: string
+  preview: string
+  createdAt: number
+}
+
+export interface LibraryData {
+  saved: SavedCommandItem[]
+  history: HistoryItem[]
 }
 
 export interface ClikApi {
@@ -103,6 +133,10 @@ export interface ClikApi {
     add: (entry: Omit<CliEntry, 'id'>) => Promise<CliEntry>
     update: (entry: CliEntry) => Promise<CliEntry>
     remove: (id: string) => Promise<void>
+  }
+  library: {
+    get: () => Promise<LibraryData>
+    save: (data: LibraryData) => Promise<void>
   }
   pty: {
     open: (req: PtyOpenRequest) => Promise<string>
