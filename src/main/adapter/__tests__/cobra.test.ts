@@ -73,7 +73,7 @@ describe('parseHelp - search (leaf)', () => {
   })
 
   it('types --remote/--hybrid/--no-detail as bool', () => {
-    for (const n of ['remote', 'hybrid', 'no-detail', 'no-filter', 'no-score', 'force-overwrite']) {
+    for (const n of ['remote', 'hybrid', 'no-detail', 'no-score', 'force-overwrite']) {
       expect(p.flags.find((f) => f.name === n)?.type).toBe('bool')
     }
   })

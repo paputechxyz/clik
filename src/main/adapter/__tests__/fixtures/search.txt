@@ -18,7 +18,6 @@ Flags:
       --hybrid                   only keep hybrid-friendly items (combine with --remote for OR)
       --min-value string         only keep items at or above this value (e.g. 200k)
       --no-detail                skip detail page fetching
-      --no-filter                skip the hard preference filter
       --no-score                 skip LLM enrichment+fit-scoring
       --remote                   only keep remote-friendly items
       --value-currency string    currency for --min-value (ISO 4217, e.g. CAD); enables FX-aware filtering
