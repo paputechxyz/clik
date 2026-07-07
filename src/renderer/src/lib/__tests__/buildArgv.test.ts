@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildArgv, commandPreview, shellQuote, shellSplit } from '../buildArgv'
+import { buildArgv, commandPreview, commandPreviewTokens, shellQuote, shellSplit } from '../buildArgv'
 import type { Flag } from '../../../../shared/types'
 
 const f = (over: Partial<Flag> & { name: string; type: Flag['type'] }): Flag => ({
@@ -50,6 +50,24 @@ describe('buildArgv', () => {
     expect(commandPreview('myapp', argv)).toBe(
       'myapp search "foo bar" baz --remote --min-value 200k'
     )
+  })
+
+  it('tokenises the preview into bin / sub / flag / val segments', () => {
+    const argv = buildArgv({
+      commandPath: ['search'],
+      flags: [f({ name: 'remote', type: 'bool' }), f({ name: 'min-value', type: 'string' })],
+      values: { remote: true, 'min-value': '200k' },
+      positionalArgs: ['foo bar', 'baz']
+    })
+    expect(commandPreviewTokens('myapp', argv)).toEqual([
+      { text: 'myapp', kind: 'bin' },
+      { text: 'search', kind: 'sub' },
+      { text: '"foo bar"', kind: 'sub' },
+      { text: 'baz', kind: 'sub' },
+      { text: '--remote', kind: 'flag' },
+      { text: '--min-value', kind: 'flag' },
+      { text: '200k', kind: 'val' }
+    ])
   })
 
   it('parses positional args with shell-style quoting', () => {

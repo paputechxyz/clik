@@ -38,6 +38,44 @@ export function commandPreview(binaryName: string, argv: string[]): string {
   return `${binaryName} ${argv.map(fmt).join(' ')}`
 }
 
+export type PreviewTokenKind = 'bin' | 'sub' | 'flag' | 'val'
+
+export interface PreviewToken {
+  text: string
+  kind: PreviewTokenKind
+}
+
+/**
+ * Tokenize a preview into {text, kind} segments for syntax-highlighted
+ * rendering. The binary name is `bin`; command-path + positional args before
+ * the first `--flag` are `sub`; `--flags` are `flag`; the value following a
+ * flag (and any later non-flag token) is `val`.
+ */
+export function commandPreviewTokens(binaryName: string, argv: string[]): PreviewToken[] {
+  const fmt = (tok: string): string => (/[\s'"\\]/.test(tok) ? `"${tok.replace(/"/g, '\\"')}"` : tok)
+  const tokens: PreviewToken[] = [{ text: binaryName, kind: 'bin' }]
+  let i = 0
+  while (i < argv.length && !argv[i].startsWith('--')) {
+    tokens.push({ text: fmt(argv[i]), kind: 'sub' })
+    i++
+  }
+  while (i < argv.length) {
+    const tok = argv[i]
+    if (tok.startsWith('--')) {
+      tokens.push({ text: fmt(tok), kind: 'flag' })
+      i++
+      if (i < argv.length && !argv[i].startsWith('--')) {
+        tokens.push({ text: fmt(argv[i]), kind: 'val' })
+        i++
+      }
+    } else {
+      tokens.push({ text: fmt(tok), kind: 'val' })
+      i++
+    }
+  }
+  return tokens
+}
+
 const SAFE_TOKEN_RE = /^[A-Za-z0-9_@%+=:,./-]+$/
 
 export function shellQuoteToken(tok: string): string {
@@ -86,4 +124,13 @@ export function shellSplit(input: string): string[] {
   }
   if (cur !== '') out.push(cur)
   return out
+}
+
+// Stable signature for a flag+positional configuration. Used to detect whether
+// the current editor state exactly matches a saved snapshot (drives the Save
+// button's "Saved" state and prevents duplicate saves). Keys are sorted so the
+// result is independent of insertion order.
+export function configSignature(flags: Record<string, unknown>, positional: string): string {
+  const keys = Object.keys(flags).sort()
+  return JSON.stringify(keys.map((k) => [k, flags[k]])) + '|' + positional
 }
