@@ -79,44 +79,23 @@ if (raw === updated) {
 }
 writeFileSync(pkgPath, updated)
 
-// Build the .app dir, ad-hoc sign it, THEN commit/tag/push and publish.
-// Building and signing before the git operations means a failed build leaves
-// no orphaned tag. electron-builder skips code signing when no Developer ID is
-// set, leaving a broken partial signature that Gatekeeper reports as
-// "damaged" — even the xattr bypass can't rescue it. Clearing xattr detritus
-// and applying a consistent deep ad-hoc signature before packaging makes the
-// bundle valid on disk, so downloaders only need the one-time Gatekeeper bypass.
-const appDir = 'dist/mac-arm64/CLIk.app'
-run('npm run build')
-run('electron-builder --mac --arm64 --dir')
-
-// macOS re-stamps xattrs (FinderInfo/provenance) on this iCloud-managed path
-// asynchronously, so the clear+sign can race and fail with "detritus not
-// allowed". Retry until the signature verifies.
-for (let attempt = 1; attempt <= 4; attempt++) {
-  run(`xattr -cr ${appDir}`)
-  try {
-    execSync(`codesign --force --deep --sign - ${appDir}`, { stdio: 'inherit', cwd: root })
-    execSync(`codesign --verify --verbose=4 ${appDir}`, { stdio: 'inherit', cwd: root })
-    break
-  } catch {
-    if (attempt === 4) {
-      console.error(`codesign failed after ${attempt} attempts`)
-      process.exit(1)
-    }
-    console.log(`codesign attempt ${attempt} failed (detritus race); retrying…`)
-  }
-}
-
-// Commit, tag, push.
+// Commit, tag, push the version bump first, so the GitHub release attaches to
+// the correct commit. (Ad-hoc signing happens inside electron-builder via the
+// afterPack hook at scripts/after-pack.js, so the build is reliable; if the
+// build step below fails, recover with: git tag -d <tag> && git push origin
+// :refs/tags/<tag> && git reset --hard HEAD~1.)
 run('git add package.json')
 run(`git commit -m "chore: release ${tag}"`)
 run(`git tag ${tag}`)
 run('git push')
 run('git push --tags')
 
-// Package the signed app into DMG/ZIP and publish to GitHub Releases.
-run(`electron-builder --mac --arm64 --prepackaged ${appDir} --publish always`)
+// Build, ad-hoc sign (afterPack hook), package DMG/ZIP, and publish to GitHub
+// Releases in one phase. The single-phase build is required because the
+// prepackaged flow skips writing app-update.yml, which electron-updater needs
+// at runtime to know where to check for updates.
+run('npm run build')
+run('electron-builder --mac --arm64 --publish always')
 
 // electron-builder publishes as a draft by default; promote it to the public
 // "latest" release so the README link and the in-app updater can find it.
