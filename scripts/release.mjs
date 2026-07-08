@@ -86,9 +86,18 @@ run(`git tag ${tag}`)
 run('git push')
 run('git push --tags')
 
-// Build + publish to GitHub Releases (mac arm64).
+// Build the .app dir, ad-hoc sign it, then package + publish.
+// electron-builder skips code signing when no Developer ID is set, leaving a
+// broken partial signature that Gatekeeper reports as "damaged" — even the
+// xattr bypass can't rescue it. Clearing xattr detritus and applying a
+// consistent deep ad-hoc signature before packaging makes the bundle valid on
+// disk, so downloaders only need the one-time Gatekeeper bypass.
+const appDir = 'dist/mac-arm64/CLIk.app'
 run('npm run build')
-run('electron-builder --mac --arm64 --publish always')
+run('electron-builder --mac --arm64 --dir')
+run(`xattr -cr ${appDir}`)
+run(`codesign --force --deep --sign - ${appDir}`)
+run(`electron-builder --mac --arm64 --prepackaged ${appDir} --publish always`)
 
 // electron-builder publishes as a draft by default; promote it to the public
 // "latest" release so the README link and the in-app updater can find it.
