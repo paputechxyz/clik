@@ -5,6 +5,105 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import type { Run } from '../store/useAppStore'
 import { computeWriteDelta } from '../lib/term-delta'
+import { ChevronUpIcon, ChevronDownIcon, CloseIcon } from './icons'
+
+// Highlight colors (sRGB hex — xterm decorations require #RRGGBB). Dim for all
+// matches, bright accent for the active match. These echo the cobalt tokens.
+const MATCH_BG = '#3a4d7a'
+const ACTIVE_MATCH_BG = '#5b8cff'
+// Cap on how many matches get a background decoration. Beyond this we still
+// count + navigate them, but stop painting to keep large outputs responsive.
+const HIGHLIGHT_CAP = 500
+
+interface Match {
+  row: number // absolute buffer line
+  col: number // cell column within that line
+  size: number // cell width
+}
+
+interface Disposer {
+  dispose(): void
+}
+
+/**
+ * Scan the whole terminal buffer (scrollback + viewport) for `query`, returning
+ * every match's position. Searches per visual row; matches that straddle a
+ * line-wrap boundary are not reported (rare for typical search terms). This
+ * talks to the buffer directly so it is independent of any addon behavior.
+ */
+function findMatchesInBuffer(term: Terminal, query: string, caseSensitive: boolean): Match[] {
+  if (!query) return []
+  const buf = term.buffer.active
+  const needle = caseSensitive ? query : query.toLowerCase()
+  const matches: Match[] = []
+  for (let y = 0; y < buf.length; y++) {
+    const line = buf.getLine(y)
+    if (!line) continue
+    const text = line.translateToString(true)
+    const hay = caseSensitive ? text : text.toLowerCase()
+    let from = 0
+    let idx = hay.indexOf(needle, from)
+    while (idx >= 0) {
+      // For single-width characters (the common case for JSON/CLI output) the
+      // string index maps 1:1 to the cell column.
+      matches.push({ row: y, col: idx, size: query.length })
+      idx = hay.indexOf(needle, idx + needle.length)
+    }
+  }
+  return matches
+}
+
+/** Paint a dim background over up to HIGHLIGHT_CAP matches; returns a disposer. */
+function decorateAllMatches(term: Terminal, matches: Match[]): Disposer {
+  const disposables: Disposer[] = []
+  const base = term.buffer.active.baseY + term.buffer.active.cursorY
+  const n = Math.min(matches.length, HIGHLIGHT_CAP)
+  for (let i = 0; i < n; i++) {
+    const m = matches[i]
+    const marker = term.registerMarker(m.row - base)
+    if (!marker) continue
+    disposables.push(marker)
+    const deco = term.registerDecoration({
+      marker,
+      x: m.col,
+      width: m.size,
+      backgroundColor: MATCH_BG,
+      layer: 'top'
+    })
+    if (deco) disposables.push(deco)
+  }
+  return { dispose: () => disposables.forEach((d) => d.dispose()) }
+}
+
+/** Paint a bright background over the active match; returns a disposer. */
+function decorateActiveMatch(term: Terminal, m: Match): Disposer {
+  const disposables: Disposer[] = []
+  const base = term.buffer.active.baseY + term.buffer.active.cursorY
+  const marker = term.registerMarker(m.row - base)
+  if (marker) {
+    disposables.push(marker)
+    const deco = term.registerDecoration({
+      marker,
+      x: m.col,
+      width: m.size,
+      backgroundColor: ACTIVE_MATCH_BG,
+      layer: 'top'
+    })
+    if (deco) disposables.push(deco)
+  }
+  return { dispose: () => disposables.forEach((d) => d.dispose()) }
+}
+
+/** Select the match and scroll it into view (centered) if it's off-screen. */
+function revealMatch(term: Terminal, m: Match): void {
+  term.select(m.col, m.row, m.size)
+  const view = term.buffer.active.viewportY
+  if (m.row < view || m.row >= view + term.rows) {
+    let scroll = m.row - view
+    scroll -= Math.floor(term.rows / 2)
+    term.scrollLines(scroll)
+  }
+}
 
 export function TerminalView({ run }: { run: Run }): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -12,6 +111,21 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
   const writtenRef = useRef(0)
   const restoringRef = useRef(true)
   const [ready, setReady] = useState(false)
+
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [matchCount, setMatchCount] = useState(0)
+  const [matchIndex, setMatchIndex] = useState(0)
+  const [caseSensitive, setCaseSensitive] = useState(false)
+
+  const inputRef = useRef<HTMLInputElement>(null)
+  const queryRef = useRef('')
+  const caseRef = useRef(false)
+  const idxRef = useRef(0)
+  const matchesRef = useRef<Match[]>([])
+  const allDecosRef = useRef<Disposer | null>(null)
+  const activeDecoRef = useRef<Disposer | null>(null)
+  caseRef.current = caseSensitive
 
   useEffect(() => {
     const container = containerRef.current
@@ -35,7 +149,8 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
       },
       scrollback: 5000,
       convertEol: true,
-      cursorBlink: true
+      cursorBlink: true,
+      allowProposedApi: true
     })
     const fit = new FitAddon()
     term.loadAddon(fit)
@@ -64,6 +179,17 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
     })
     term.onResize(({ cols, rows }) => window.clik.pty.resize(run.id, cols, rows))
     window.clik.pty.resize(run.id, term.cols, term.rows)
+
+    // Intercept Cmd/Ctrl+F inside the terminal's keystream to open the
+    // in-terminal search bar instead of (no-op) browser find.
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.type === 'keydown' && (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'f') {
+        setSearchOpen(true)
+        return false
+      }
+      return true
+    })
+
     term.focus()
 
     const ro = new ResizeObserver(() => {
@@ -77,6 +203,8 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
 
     return () => {
       ro.disconnect()
+      allDecosRef.current?.dispose()
+      activeDecoRef.current?.dispose()
       term.dispose()
       termRef.current = null
       writtenRef.current = 0
@@ -103,5 +231,149 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
     }
   }, [run.output, ready])
 
-  return <div className="term-host" ref={containerRef} />
+  function clearDecorations(): void {
+    allDecosRef.current?.dispose()
+    activeDecoRef.current?.dispose()
+    allDecosRef.current = null
+    activeDecoRef.current = null
+  }
+
+  // Fresh query (or case toggle): recompute matches, repaint all highlights,
+  // and jump to the first match.
+  function applyQuery(q: string): void {
+    const term = termRef.current
+    if (!term) return
+    queryRef.current = q
+    clearDecorations()
+    if (!q) {
+      term.clearSelection()
+      matchesRef.current = []
+      setMatchCount(0)
+      setMatchIndex(0)
+      idxRef.current = 0
+      return
+    }
+    const matches = findMatchesInBuffer(term, q, caseRef.current)
+    matchesRef.current = matches
+    setMatchCount(matches.length)
+    if (matches.length === 0) {
+      term.clearSelection()
+      setMatchIndex(0)
+      idxRef.current = 0
+      return
+    }
+    idxRef.current = 0
+    setMatchIndex(0)
+    allDecosRef.current = decorateAllMatches(term, matches)
+    const active = matches[0]
+    activeDecoRef.current = decorateActiveMatch(term, active)
+    revealMatch(term, active)
+  }
+
+  // Move between matches without recomputing/redecorating the full set.
+  function navigate(dir: 'next' | 'prev'): void {
+    const term = termRef.current
+    const matches = matchesRef.current
+    if (!term || matches.length === 0) return
+    if (dir === 'next') idxRef.current = (idxRef.current + 1) % matches.length
+    else idxRef.current = (idxRef.current - 1 + matches.length) % matches.length
+    setMatchIndex(idxRef.current)
+    activeDecoRef.current?.dispose()
+    const active = matches[idxRef.current]
+    activeDecoRef.current = decorateActiveMatch(term, active)
+    revealMatch(term, active)
+  }
+
+  // Focus the input when the search opens; tear down + refocus on close.
+  useEffect(() => {
+    if (searchOpen) {
+      inputRef.current?.focus()
+      inputRef.current?.select()
+      applyQuery(queryRef.current)
+    } else {
+      clearDecorations()
+      termRef.current?.clearSelection()
+      setQuery('')
+      setMatchCount(0)
+      setMatchIndex(0)
+      idxRef.current = 0
+      matchesRef.current = []
+      termRef.current?.focus()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchOpen])
+
+  // Re-run the search when output grows while the bar is open (e.g. a command
+  // still streaming), so highlights + count track the new content.
+  useEffect(() => {
+    if (!searchOpen || !queryRef.current) return
+    applyQuery(queryRef.current)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [run.output])
+
+  function onQueryChange(value: string): void {
+    setQuery(value)
+    applyQuery(value)
+  }
+
+  function toggleCase(): void {
+    const next = !caseSensitive
+    setCaseSensitive(next)
+    caseRef.current = next
+    if (queryRef.current) applyQuery(queryRef.current)
+  }
+
+  return (
+    <div className="term-host-wrap">
+      <div className="term-host" ref={containerRef} />
+      {searchOpen && (
+        <div className="term-search">
+          <button
+            className="term-search-toggle"
+            title={caseSensitive ? 'Match case (on)' : 'Match case'}
+            data-active={caseSensitive || undefined}
+            onClick={toggleCase}
+          >
+            Aa
+          </button>
+          <input
+            ref={inputRef}
+            className="term-search-input"
+            placeholder="Find in terminal"
+            value={query}
+            spellCheck={false}
+            onChange={(e) => onQueryChange(e.target.value)}
+            onKeyDown={(e) => {
+              e.stopPropagation()
+              if (e.key === 'Escape') {
+                e.preventDefault()
+                setSearchOpen(false)
+              } else if (e.key === 'Enter') {
+                e.preventDefault()
+                navigate(e.shiftKey ? 'prev' : 'next')
+              } else if (e.key === 'ArrowDown') {
+                e.preventDefault()
+                navigate('next')
+              } else if (e.key === 'ArrowUp') {
+                e.preventDefault()
+                navigate('prev')
+              }
+            }}
+          />
+          <span className="term-search-count">
+            {query ? (matchCount > 0 ? `${matchIndex + 1} of ${matchCount}` : '0 results') : ''}
+          </span>
+          <button className="term-search-nav" title="Previous (↑ / Shift+Enter)" onClick={() => navigate('prev')}>
+            <ChevronUpIcon />
+          </button>
+          <button className="term-search-nav" title="Next (↓ / Enter)" onClick={() => navigate('next')}>
+            <ChevronDownIcon />
+          </button>
+          <button className="term-search-close" title="Close (Esc)" onClick={() => setSearchOpen(false)}>
+            <CloseIcon />
+          </button>
+        </div>
+      )}
+    </div>
+  )
 }
