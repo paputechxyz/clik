@@ -96,6 +96,14 @@ export interface SavedCommandItem {
   positional: string
   preview: string
   createdAt: number
+  // Single-level folder grouping: null = root. Older data without this field
+  // is migrated to null on load (see src/main/library.ts).
+  folderId?: string | null
+}
+
+export interface Folder {
+  id: string
+  name: string
 }
 
 export interface HistoryItem {
@@ -113,6 +121,7 @@ export interface HistoryItem {
 export interface LibraryData {
   saved: SavedCommandItem[]
   history: HistoryItem[]
+  folders: Folder[]
 }
 
 export interface ClikApi {

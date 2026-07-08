@@ -6,15 +6,22 @@ import type {
   CliEntry,
   PtyEvent,
   SavedCommandItem,
-  HistoryItem
+  HistoryItem,
+  Folder
 } from '../../../shared/types'
 import { buildArgv, commandPreview, configSignature, shellQuote, shellSplit } from '../lib/buildArgv'
 import { parseCommandTokens } from '../lib/parseCommand'
 
-export type { SavedCommandItem, HistoryItem }
+export type { SavedCommandItem, HistoryItem, Folder }
 
 export type RunStatus = 'running' | 'exited'
 export type RunMode = 'shell' | 'command'
+
+function uid(): string {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random()}`
+}
 
 export interface Run {
   id: string
@@ -68,10 +75,39 @@ function savePersisted(s: PersistedSession): void {
 // Persist the library (saved + history) to the main process, which writes it
 // to userData/library.json so it survives restarts (unlike renderer localStorage,
 // which is scoped per-origin and lost between dev/packaged builds).
-function persistLibrary(saved: SavedCommandItem[], history: HistoryItem[]): void {
-  void window.clik.library.save({ saved, history }).catch(() => {
+function persistLibrary(saved: SavedCommandItem[], history: HistoryItem[], folders: Folder[]): void {
+  void window.clik.library.save({ saved, history, folders }).catch(() => {
     // ignore — best-effort; main process is the source of truth on next launch
   })
+}
+
+// Reposition a command into a folder (null = root) at a 0-based index within
+// that location. The `saved[]` array is the single source of truth for order;
+// within-location order is array position scoped by folderId (plan KTD2).
+function placeInLocation(
+  saved: SavedCommandItem[],
+  id: string,
+  folderId: string | null,
+  index: number
+): SavedCommandItem[] {
+  const without = saved.filter((it) => it.id !== id)
+  const moved = saved.find((it) => it.id === id)
+  if (!moved) return saved
+  const item: SavedCommandItem = { ...moved, folderId }
+  const result: SavedCommandItem[] = []
+  let placed = false
+  let seen = 0
+  for (const it of without) {
+    const sameLocation = (it.folderId ?? null) === folderId
+    if (sameLocation && !placed && seen >= index) {
+      result.push(item)
+      placed = true
+    }
+    result.push(it)
+    if (sameLocation) seen++
+  }
+  if (!placed) result.push(item)
+  return result
 }
 
 function initFlagValue(f: Flag): unknown {
@@ -169,6 +205,7 @@ interface AppState {
   // library (saved + history)
   saved: SavedCommandItem[]
   history: HistoryItem[]
+  folders: Folder[]
 
   loadEntries: () => Promise<void>
   loadLibrary: () => Promise<void>
@@ -189,6 +226,12 @@ interface AppState {
   saveCurrentCommand: () => void
   removeSaved: (id: string) => void
   clearHistory: () => void
+  renameSaved: (id: string, name: string) => void
+  addFolder: (name: string) => void
+  renameFolder: (id: string, name: string) => void
+  removeFolder: (id: string) => void
+  moveCommand: (id: string, folderId: string | null, index: number) => void
+  reorderFolders: (fromIndex: number, toIndex: number) => void
   loadCommand: (item: {
     entryId: string
     selection: string[]
@@ -217,6 +260,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   commands: persisted?.commands ?? {},
   saved: [],
   history: [],
+  folders: [],
 
   async loadEntries() {
     const entries = await window.clik.registry.list()
@@ -243,7 +287,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       const data = await window.clik.library.get()
       set({
         saved: Array.isArray(data.saved) ? data.saved : [],
-        history: Array.isArray(data.history) ? data.history : []
+        history: Array.isArray(data.history) ? data.history : [],
+        folders: Array.isArray(data.folders) ? data.folders : []
       })
     } catch {
       // leave empty defaults; main process is unreachable (rare)
@@ -269,13 +314,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   async removeEntry(id) {
     await window.clik.registry.remove(id)
     const entries = get().entries.filter((e) => e.id !== id)
+    // Keep saved commands + history for the removed CLI (plan R9). Orphaned
+    // commands stay visible; clicking them is a no-op via loadCommand's early
+    // return when the entry is missing.
     set((s) => {
       const selections = { ...s.selections }
       delete selections[id]
-      const saved = s.saved.filter((it) => it.entryId !== id)
-      const history = s.history.filter((it) => it.entryId !== id)
-      persistLibrary(saved, history)
-      return { entries, selections, saved, history }
+      return { entries, selections }
     })
     if (get().selectedEntryId === id) {
       await get().selectEntry(entries.length > 0 ? entries[0].id : null)
@@ -380,7 +425,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
 
     const historyItem: HistoryItem = {
-      id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+      id: uid(),
       entryId: selectedEntryId,
       entryName: entry.name,
       binaryName: tree.binaryName,
@@ -392,7 +437,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     set((s) => {
       const history = [historyItem, ...s.history].slice(0, MAX_HISTORY)
-      persistLibrary(s.saved, history)
+      persistLibrary(s.saved, history, s.folders)
       return { history }
     })
   },
@@ -463,10 +508,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const preview = commandPreview(tree.binaryName, argv)
     const baseName = [tree.binaryName, ...selection].join(' ').trim()
     const item: SavedCommandItem = {
-      id:
-        typeof crypto !== 'undefined' && 'randomUUID' in crypto
-          ? crypto.randomUUID()
-          : `${Date.now()}-${Math.random()}`,
+      id: uid(),
       name: baseName,
       entryId: selectedEntryId,
       entryName: entry.name,
@@ -475,7 +517,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       flags: { ...flagValues },
       positional: positionalArgs,
       preview,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      folderId: null
     }
     set((s) => {
       // Always keep a new copy (never overwrite). Disambiguate the label when a
@@ -488,8 +531,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         name = `${baseName} (${n})`
       }
       const namedItem = name === item.name ? item : { ...item, name }
-      const saved = [namedItem, ...s.saved].sort((a, b) => a.name.localeCompare(b.name))
-      persistLibrary(saved, s.history)
+      // Manual order (plan R5): new saves land at the bottom of root. The
+      // previous A–Z sort is removed so drag-to-reorder is authoritative.
+      const saved = [...s.saved, namedItem]
+      persistLibrary(saved, s.history, s.folders)
       return { saved }
     })
   },
@@ -497,15 +542,81 @@ export const useAppStore = create<AppState>((set, get) => ({
   removeSaved(id) {
     set((s) => {
       const saved = s.saved.filter((it) => it.id !== id)
-      persistLibrary(saved, s.history)
+      persistLibrary(saved, s.history, s.folders)
       return { saved }
     })
   },
 
   clearHistory() {
     set((s) => {
-      persistLibrary(s.saved, [])
+      persistLibrary(s.saved, [], s.folders)
       return { history: [] }
+    })
+  },
+
+  renameSaved(id, name) {
+    set((s) => {
+      const trimmed = name.trim()
+      if (trimmed === '') return {}
+      const saved = s.saved.map((it) => (it.id === id ? { ...it, name: trimmed } : it))
+      persistLibrary(saved, s.history, s.folders)
+      return { saved }
+    })
+  },
+
+  addFolder(name) {
+    const trimmed = name.trim()
+    if (trimmed === '') return
+    const folder: Folder = { id: uid(), name: trimmed }
+    set((s) => {
+      const folders = [...s.folders, folder]
+      persistLibrary(s.saved, s.history, folders)
+      return { folders }
+    })
+  },
+
+  renameFolder(id, name) {
+    set((s) => {
+      const trimmed = name.trim()
+      if (trimmed === '') return {}
+      const folders = s.folders.map((f) => (f.id === id ? { ...f, name: trimmed } : f))
+      persistLibrary(s.saved, s.history, folders)
+      return { folders }
+    })
+  },
+
+  removeFolder(id) {
+    set((s) => {
+      const folders = s.folders.filter((f) => f.id !== id)
+      const saved = s.saved.filter((it) => (it.folderId ?? null) !== id)
+      persistLibrary(saved, s.history, folders)
+      return { folders, saved }
+    })
+  },
+
+  moveCommand(id, folderId, index) {
+    set((s) => {
+      const saved = placeInLocation(s.saved, id, folderId, index)
+      persistLibrary(saved, s.history, s.folders)
+      return { saved }
+    })
+  },
+
+  reorderFolders(fromIndex, toIndex) {
+    set((s) => {
+      if (
+        fromIndex < 0 ||
+        fromIndex >= s.folders.length ||
+        toIndex < 0 ||
+        toIndex >= s.folders.length ||
+        fromIndex === toIndex
+      )
+        return {}
+      const folders = s.folders.slice()
+      const [moved] = folders.splice(fromIndex, 1)
+      folders.splice(toIndex, 0, moved)
+      persistLibrary(s.saved, s.history, folders)
+      return { folders }
     })
   },
 
