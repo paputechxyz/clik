@@ -49,8 +49,18 @@ if (status !== '') {
   console.error(status)
   process.exit(1)
 }
+
+// Resolve a GitHub token: explicit env var first, then `gh auth token` (keyring).
 if (!process.env.GH_TOKEN && !process.env.GITHUB_TOKEN) {
-  console.error('GH_TOKEN (or GITHUB_TOKEN) is required to publish. Export it and retry.')
+  try {
+    const token = shOut('gh auth token')
+    if (token) process.env.GH_TOKEN = token
+  } catch {
+    // gh not available / not logged in — fall through to the error below
+  }
+}
+if (!process.env.GH_TOKEN && !process.env.GITHUB_TOKEN) {
+  console.error('GitHub token required: export GH_TOKEN, or run `gh auth login`.')
   process.exit(1)
 }
 
