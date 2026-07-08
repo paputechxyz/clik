@@ -3,7 +3,6 @@ import type { CommandNode } from '../../../shared/types'
 import { useAppStore } from '../store/useAppStore'
 import { useLayoutStore } from '../store/useLayoutStore'
 import { FlagPanel } from './FlagPanel'
-import { LibraryColumn } from './LibraryColumn'
 import { Resizer } from './Resizer'
 import { ChevronLeftIcon, ChevronRightIcon, PlusIcon, RefreshIcon } from './icons'
 
@@ -263,7 +262,6 @@ export function ColumnNavigator({ onAddCommand }: { onAddCommand: () => void }):
 
   return (
     <section className="columns" ref={sectionRef}>
-      <LibraryColumn />
       {children}
     </section>
   )
