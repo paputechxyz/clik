@@ -8,15 +8,22 @@
 
 ---
 
-macOS Finder-style column GUI for any cobra CLI. Browse a CLI's command tree as
-Miller columns, edit typed flags in a form, and run commands in real,
-interactive terminal tabs (PTY-backed). macOS-first.
+macOS Finder-style column GUI for the command line. Browse a CLI's command
+tree as Miller columns, edit typed flags in a form, save and organize
+commands into folders, and run them in real, interactive terminal tabs
+(PTY-backed). macOS-first.
 
 ## Features
 
-- **Miller columns** — recursive command tree discovered from the cobra
-  `--help` output; typed flags (bool / int / float / string / stringSlice)
-  rendered as the right widgets with a live argv preview.
+- **Miller columns** — command tree discovered from each CLI's `--help`
+  output; typed flags (bool / int / float / string / stringSlice) rendered as
+  the right widgets with a live argv preview.
+- **Saved library + folders** — bookmark any command (flags and positional
+  args) as a snapshot and revisit it later. Organize saved commands into
+  single-level folders, drag to reorder and move them between folders, and
+  rename commands or folders inline — Postman-style collections for your CLI.
+- **History** — every run is captured, newest first; click to reload a past
+  command.
 - **Real terminal tabs** — every tab is a PTY (`node-pty`) rendered with
   xterm.js: free typing, echo, TUIs, window resize, and kernel-handled
   `Ctrl+C` / `Ctrl+D`. `Cmd+T` opens a login-shell tab; `Cmd+W` closes it.
@@ -26,7 +33,8 @@ interactive terminal tabs (PTY-backed). macOS-first.
   paths from `which`; every path stays editable.
 - **Refresh** — re-analyze a CLI after rebuilding it (drop the cached tree and
   re-parse every command + flag).
-- Works with any cobra CLI (`gh`, `docker`, `kubectl`, …).
+- Works with any command-line tool that exposes subcommands and flags via
+  `--help` (`gh`, `docker`, `kubectl`, …).
 
 ## Commands
 
@@ -40,8 +48,8 @@ interactive terminal tabs (PTY-backed). macOS-first.
 ## Architecture
 
 - `src/main/` — Electron main: app/window/menu, IPC, `PtyManager` (`node-pty`),
-  CLI registry, cobra adapter (`adapter/cobra.ts` parses `--help` into a typed
-  tree), shell-env capture, PATH scanner.
+  CLI registry, a `--help` adapter that parses help output into a typed
+  command tree, saved-library persistence, shell-env capture, PATH scanner.
 - `src/preload/` — contextBridge surface (`window.clik`); context
   isolation on, node integration off.
 - `src/renderer/` — React UI: column navigator, flag panel, terminal tabs

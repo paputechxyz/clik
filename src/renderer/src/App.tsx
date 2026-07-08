@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useAppStore } from './store/useAppStore'
 import { useLayoutStore } from './store/useLayoutStore'
 import { ColumnNavigator } from './components/ColumnNavigator'
+import { LibraryColumn } from './components/LibraryColumn'
 import { SettingsModal } from './components/SettingsModal'
 import { RunTabs } from './components/RunTabs'
 import { Resizer } from './components/Resizer'
@@ -80,36 +81,39 @@ export function App(): JSX.Element {
       </header>
 
       <div className="body" ref={bodyRef}>
-        <section
-          className="columns-section"
-          style={{ flex: `${topWeight} 1 0`, minHeight: 0 }}
-        >
-          <ColumnNavigator onAddCommand={() => setSettingsOpen(true)} />
-        </section>
-
-        {outputCollapsed ? (
-          <section className="output-section output-collapsed" style={{ flex: '0 0 26px' }}>
-            <button
-              className="output-expand"
-              title="Expand terminal"
-              onClick={() => setOutputCollapsed(false)}
-            >
-              <ChevronUpIcon />
-              <span className="output-expand-label">Terminal</span>
-            </button>
+        <LibraryColumn />
+        <section className="body-right">
+          <section
+            className="columns-section"
+            style={{ flex: `${topWeight} 1 0`, minHeight: 0 }}
+          >
+            <ColumnNavigator onAddCommand={() => setSettingsOpen(true)} />
           </section>
-        ) : (
-          <>
-            <Resizer
-              orientation="horizontal"
-              title="Drag to resize"
-              onDrag={(d) => bodyHeight > 0 && dragOutputResizer(bodyHeight, d)}
-            />
-            <section className="output-section" style={{ flex: `${bottomWeight} 1 0`, minHeight: 0 }}>
-              <RunTabs onCollapse={() => setOutputCollapsed(true)} />
+
+          {outputCollapsed ? (
+            <section className="output-section output-collapsed" style={{ flex: '0 0 26px' }}>
+              <button
+                className="output-expand"
+                title="Expand terminal"
+                onClick={() => setOutputCollapsed(false)}
+              >
+                <ChevronUpIcon />
+                <span className="output-expand-label">Terminal</span>
+              </button>
             </section>
-          </>
-        )}
+          ) : (
+            <>
+              <Resizer
+                orientation="horizontal"
+                title="Drag to resize"
+                onDrag={(d) => bodyHeight > 0 && dragOutputResizer(bodyHeight, d)}
+              />
+              <section className="output-section" style={{ flex: `${bottomWeight} 1 0`, minHeight: 0 }}>
+                <RunTabs onCollapse={() => setOutputCollapsed(true)} />
+              </section>
+            </>
+          )}
+        </section>
       </div>
 
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
