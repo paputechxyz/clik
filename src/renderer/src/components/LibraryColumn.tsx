@@ -715,10 +715,10 @@ function ConfirmDeleteModal({
           </p>
         </div>
         <div className="modal-foot">
-          <button className="ghost-btn" onClick={onCancel}>
+          <button className="ghost-btn" onClick={onCancel} autoFocus>
             Cancel
           </button>
-          <button className="ghost-btn danger" onClick={onConfirm} autoFocus>
+          <button className="ghost-btn danger" onClick={onConfirm}>
             Delete
           </button>
         </div>
