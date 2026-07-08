@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type DragEvent } from 'react'
 import type { Folder, SavedCommandItem } from '../../../shared/types'
 import { useAppStore } from '../store/useAppStore'
 import {
@@ -67,6 +67,22 @@ const MIN_WEIGHT = 0.0001
 
 type EditTarget = { kind: 'command' | 'folder'; id: string }
 type ConfirmDelete = { folderId: string; name: string; count: number }
+type DropHint =
+  | { type: 'command'; id: string; edge: 'before' | 'after' }
+  | { type: 'folder'; id: string; edge: 'before' | 'after' }
+  | { type: 'into'; folderId: string }
+
+interface DndProps {
+  drag: { kind: 'command' | 'folder'; id: string } | null
+  dropHint: DropHint | null
+  onCommandDragStart: (e: DragEvent, item: SavedCommandItem) => void
+  onCommandDragOver: (e: DragEvent, item: SavedCommandItem) => void
+  onCommandDrop: (e: DragEvent, item: SavedCommandItem) => void
+  onFolderDragStart: (e: DragEvent, f: Folder) => void
+  onFolderDragOver: (e: DragEvent, f: Folder) => void
+  onFolderDrop: (e: DragEvent, f: Folder) => void
+  endDrag: () => void
+}
 
 export function LibraryColumn(): JSX.Element {
   const initial = useRef<LibraryLayout>(loadLayout())
@@ -127,6 +143,8 @@ export function LibraryColumn(): JSX.Element {
   const renameFolder = useAppStore((s) => s.renameFolder)
   const removeFolder = useAppStore((s) => s.removeFolder)
   const renameSaved = useAppStore((s) => s.renameSaved)
+  const moveCommand = useAppStore((s) => s.moveCommand)
+  const reorderFolders = useAppStore((s) => s.reorderFolders)
 
   const rootItems = saved.filter((it) => (it.folderId ?? null) === null)
 
@@ -162,6 +180,113 @@ export function LibraryColumn(): JSX.Element {
     const count = saved.filter((it) => it.folderId === f.id).length
     if (count === 0) removeFolder(f.id)
     else setConfirmDelete({ folderId: f.id, name: f.name, count })
+  }
+
+  // ---- drag-and-drop (plan U3, native HTML5 DnD) -------------------------
+  const [drag, setDrag] = useState<{ kind: 'command' | 'folder'; id: string } | null>(null)
+  const [dropHint, setDropHint] = useState<DropHint | null>(null)
+
+  const endDrag = (): void => {
+    setDrag(null)
+    setDropHint(null)
+  }
+
+  const onCommandDragStart = (e: DragEvent, item: SavedCommandItem): void => {
+    setDrag({ kind: 'command', id: item.id })
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', item.id)
+  }
+
+  const onCommandDragOver = (e: DragEvent, item: SavedCommandItem): void => {
+    if (!drag || drag.kind !== 'command') return
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = 'move'
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const before = e.clientY < rect.top + rect.height / 2
+    setDropHint({ type: 'command', id: item.id, edge: before ? 'before' : 'after' })
+  }
+
+  const onCommandDrop = (e: DragEvent, item: SavedCommandItem): void => {
+    if (!drag || drag.kind !== 'command') return
+    e.preventDefault()
+    e.stopPropagation()
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const before = e.clientY < rect.top + rect.height / 2
+    const location = item.folderId ?? null
+    // Index in the destination location, EXCLUDING the dragged item, so
+    // placeInLocation lands in the right slot for same-location reorders.
+    const destItems = saved.filter((it) => (it.folderId ?? null) === location && it.id !== drag.id)
+    const targetIndex = destItems.findIndex((it) => it.id === item.id)
+    if (targetIndex === -1) {
+      endDrag()
+      return
+    }
+    moveCommand(drag.id, location, before ? targetIndex : targetIndex + 1)
+    endDrag()
+  }
+
+  const onFolderDragStart = (e: DragEvent, f: Folder): void => {
+    setDrag({ kind: 'folder', id: f.id })
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', f.id)
+  }
+
+  const onFolderDragOver = (e: DragEvent, f: Folder): void => {
+    if (!drag) return
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = 'move'
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const before = e.clientY < rect.top + rect.height / 2
+    if (drag.kind === 'command') setDropHint({ type: 'into', folderId: f.id })
+    else setDropHint({ type: 'folder', id: f.id, edge: before ? 'before' : 'after' })
+  }
+
+  const onFolderDrop = (e: DragEvent, f: Folder): void => {
+    if (!drag) return
+    e.preventDefault()
+    e.stopPropagation()
+    if (drag.kind === 'command') {
+      const count = saved.filter((it) => it.folderId === f.id).length
+      moveCommand(drag.id, f.id, count) // append to folder end
+    } else if (drag.id !== f.id) {
+      const dest = folders.filter((x) => x.id !== drag.id)
+      const targetIndex = dest.findIndex((x) => x.id === f.id)
+      if (targetIndex !== -1) {
+        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+        const before = e.clientY < rect.top + rect.height / 2
+        const fromIndex = folders.findIndex((x) => x.id === drag.id)
+        reorderFolders(fromIndex, before ? targetIndex : targetIndex + 1)
+      }
+    }
+    endDrag()
+  }
+
+  // Fallback: dropping a command on empty list space appends it to root.
+  const onListDragOver = (e: DragEvent): void => {
+    if (!drag || drag.kind !== 'command') return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+  }
+  const onListDrop = (e: DragEvent): void => {
+    if (!drag || drag.kind !== 'command') return
+    e.preventDefault()
+    const count = saved.filter((it) => (it.folderId ?? null) === null).length
+    moveCommand(drag.id, null, count)
+    endDrag()
+  }
+
+  const dnd: DndProps = {
+    drag,
+    dropHint,
+    onCommandDragStart,
+    onCommandDragOver,
+    onCommandDrop,
+    onFolderDragStart,
+    onFolderDragOver,
+    onFolderDrop,
+    endDrag
   }
 
   const onDragResizer = (deltaPx: number): void => {
@@ -238,7 +363,7 @@ export function LibraryColumn(): JSX.Element {
             {saved.length === 0 && folders.length === 0 ? (
               <div className="lib-empty">Saved commands appear here. Use the Save button next to Run.</div>
             ) : (
-              <ul className="lib-list">
+              <ul className="lib-list" onDragOver={onListDragOver} onDrop={onListDrop}>
                 {rootItems.map((it) => (
                   <SavedCommandRow
                     key={it.id}
@@ -252,6 +377,7 @@ export function LibraryColumn(): JSX.Element {
                     cancelRename={cancelRename}
                     onLoad={loadCommand}
                     onRemove={removeSaved}
+                    {...dnd}
                   />
                 ))}
                 {folders.map((f) => (
@@ -270,6 +396,7 @@ export function LibraryColumn(): JSX.Element {
                     onLoad={loadCommand}
                     onRemove={removeSaved}
                     onDelete={onDeleteFolder}
+                    {...dnd}
                   />
                 ))}
               </ul>
@@ -373,12 +500,23 @@ function SavedCommandRow({
   commitRename,
   cancelRename,
   onLoad,
-  onRemove
-}: RowSharedProps & { item: SavedCommandItem; indent: number }): JSX.Element {
+  onRemove,
+  onCommandDragStart,
+  onCommandDragOver,
+  onCommandDrop,
+  endDrag,
+  dropHint
+}: RowSharedProps & DndProps & { item: SavedCommandItem; indent: number }): JSX.Element {
   const isEditing = editing?.kind === 'command' && editing.id === item.id
+  const hint = dropHint?.type === 'command' && dropHint.id === item.id ? ` drop-${dropHint.edge}` : ''
   return (
     <li
-      className={`lib-item${isEditing ? ' editing' : ''}`}
+      className={`lib-item${isEditing ? ' editing' : ''}${hint}`}
+      draggable={!isEditing}
+      onDragStart={(e) => onCommandDragStart(e, item)}
+      onDragEnd={endDrag}
+      onDragOver={(e) => onCommandDragOver(e, item)}
+      onDrop={(e) => onCommandDrop(e, item)}
       title={item.preview}
       style={indent ? { paddingLeft: `calc(var(--space-3) + ${indent * 12}px)` } : undefined}
     >
@@ -431,12 +569,34 @@ function FolderGroup({
   cancelRename,
   onLoad,
   onRemove,
-  onDelete
-}: FolderGroupProps): JSX.Element {
+  onDelete,
+  drag,
+  onCommandDragStart,
+  onCommandDragOver,
+  onCommandDrop,
+  onFolderDragStart,
+  onFolderDragOver,
+  onFolderDrop,
+  endDrag,
+  dropHint
+}: FolderGroupProps & DndProps): JSX.Element {
   const isEditing = editing?.kind === 'folder' && editing.id === folder.id
+  const hint =
+    dropHint?.type === 'into' && dropHint.folderId === folder.id
+      ? ' drop-into'
+      : dropHint?.type === 'folder' && dropHint.id === folder.id
+      ? ` drop-folder-${dropHint.edge}`
+      : ''
   return (
     <li className="lib-folder">
-      <div className="lib-folder-head">
+      <div
+        className={`lib-folder-head${hint}`}
+        draggable={!isEditing}
+        onDragStart={(e) => onFolderDragStart(e, folder)}
+        onDragEnd={endDrag}
+        onDragOver={(e) => onFolderDragOver(e, folder)}
+        onDrop={(e) => onFolderDrop(e, folder)}
+      >
         <button className="lib-folder-toggle" onClick={() => onToggle(folder.id)}>
           {collapsed ? <ChevronRightIcon /> : <ChevronDownIcon />}
           <FolderIcon />
@@ -477,6 +637,15 @@ function FolderGroup({
               cancelRename={cancelRename}
               onLoad={onLoad}
               onRemove={onRemove}
+              drag={drag}
+              dropHint={dropHint}
+              onCommandDragStart={onCommandDragStart}
+              onCommandDragOver={onCommandDragOver}
+              onCommandDrop={onCommandDrop}
+              onFolderDragStart={onFolderDragStart}
+              onFolderDragOver={onFolderDragOver}
+              onFolderDrop={onFolderDrop}
+              endDrag={endDrag}
             />
           ))}
         </ul>
