@@ -750,6 +750,7 @@ button { font-family: var(--font-ui); color: inherit; }
   font-family: var(--font-mono); color: var(--fg);
   background: var(--inset); padding: 1px var(--space-2); border-radius: var(--radius-xs);
 }
+.update-text { font-size: var(--text-sm); color: var(--fg-muted); margin-top: 2px; }
 
 .suggest-grid { display: flex; flex-direction: column; gap: var(--space-2); }
 .suggest-text { font-size: var(--text-sm); color: var(--fg-muted); margin-bottom: var(--space-3); line-height: 1.5; }

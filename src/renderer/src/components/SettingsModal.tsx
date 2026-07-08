@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { CliEntry, ResolvedCommand, ShellEnvStatus } from '../../../shared/types'
+import type { CliEntry, ResolvedCommand, ShellEnvStatus, UpdateStatusEvent } from '../../../shared/types'
 import { useAppStore } from '../store/useAppStore'
 
 function serializeEnv(env: Record<string, string>): string {
@@ -34,10 +34,19 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
   const [shellStatus, setShellStatus] = useState<ShellEnvStatus | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [suggestions, setSuggestions] = useState<ResolvedCommand[]>([])
+  const [version, setVersion] = useState('')
+  const [update, setUpdate] = useState<UpdateStatusEvent>({ state: 'idle' })
+  const [checking, setChecking] = useState(false)
 
   useEffect(() => {
     void window.clik.shellEnv.status().then(setShellStatus)
     void window.clik.scan.suggest().then(setSuggestions)
+    void window.clik.version().then(setVersion)
+    const off = window.clik.update.onStatus((e) => {
+      setUpdate(e)
+      if (e.state !== 'checking') setChecking(false)
+    })
+    return off
   }, [])
 
   const refreshShell = async () => {
@@ -92,17 +101,63 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
   const addedNames = new Set(entries.map((e) => e.name))
   const discovered = suggestions.filter((s) => !addedNames.has(s.name))
 
+  const updateText = (s: UpdateStatusEvent): string => {
+    switch (s.state) {
+      case 'unavailable':
+        return 'Updates unavailable in development'
+      case 'idle':
+        return ''
+      case 'checking':
+        return 'Checking…'
+      case 'available':
+        return s.version ? `Downloading v${s.version}…` : 'Downloading…'
+      case 'not-available':
+        return `Up to date${version ? ` (v${version})` : ''}`
+      case 'downloading':
+        return typeof s.percent === 'number' ? `Downloading… ${s.percent}%` : 'Downloading…'
+      case 'downloaded':
+        return s.version ? `v${s.version} ready to install` : 'Ready to install'
+      case 'error':
+        return s.message ? `Update error: ${s.message}` : 'Update error'
+    }
+  }
+
+  const check = async (): Promise<void> => {
+    setChecking(true)
+    setUpdate({ state: 'checking' })
+    await window.clik.update.check()
+  }
+
+  const isDownloaded = update.state === 'downloaded'
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-card" onClick={(e) => e.stopPropagation()}>
         <header className="modal-head">
-          <h2>Manage CLIs</h2>
+          <h2>Settings</h2>
           <button className="icon-btn" onClick={onClose} title="Close">
             x
           </button>
         </header>
 
         <div className="modal-body">
+          <fieldset className="entry-fieldset">
+            <div className="shell-env-row">
+              <div className="shell-env-text">
+                <strong>CLIk {version && `v${version}`}</strong>
+                <div className="update-text">{updateText(update)}</div>
+              </div>
+              {isDownloaded ? (
+                <button className="run-btn" onClick={() => void window.clik.update.restart()}>
+                  Restart to Update
+                </button>
+              ) : (
+                <button className="ghost-btn" onClick={() => void check()} disabled={checking || update.state === 'unavailable'}>
+                  {checking ? 'Checking…' : 'Check Updates'}
+                </button>
+              )}
+            </div>
+          </fieldset>
           <fieldset className="entry-fieldset">
             <legend>Shell environment</legend>
             <div className="shell-env-row">

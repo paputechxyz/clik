@@ -54,6 +54,18 @@ const api: ClikApi = {
     return () => {
       ipcRenderer.removeListener('menu:action', handler)
     }
+  },
+  version: () => ipcRenderer.invoke('app:version'),
+  update: {
+    check: () => ipcRenderer.invoke('update:check'),
+    restart: () => ipcRenderer.invoke('update:restart'),
+    onStatus: (cb) => {
+      const handler = (_e: unknown, data: Parameters<typeof cb>[0]) => cb(data)
+      ipcRenderer.on('update:status', handler)
+      return () => {
+        ipcRenderer.removeListener('update:status', handler)
+      }
+    }
   }
 }
 

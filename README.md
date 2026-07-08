@@ -13,6 +13,27 @@ tree as Miller columns, edit typed flags in a form, save and organize
 commands into folders, and run them in real, interactive terminal tabs
 (PTY-backed). macOS-first.
 
+## Download
+
+**➡️ [Download the latest release for macOS (Apple Silicon)](https://github.com/paputechxyz/clik/releases/latest)**
+
+Grab the `CLIk-<version>-arm64.dmg` from the latest release, open it, and drag
+**CLIk** to your Applications folder.
+
+> **Unsigned build — one-time bypass.** CLIk is not code-signed or notarized,
+> so macOS Gatekeeper will block the first launch ("cannot be opened because
+> the developer cannot be verified", or a misleading "is damaged"). Clear it
+> once with either:
+>
+> - **Right-click** CLIk → **Open** → **Open** on the prompt; or
+> - in Terminal: `xattr -dr com.apple.quarantine /Applications/CLIk.app`
+>
+> After that, the app and its in-app updates open normally.
+
+In-app updates: open **Settings** (the gear icon) to see your version and
+click **Check Updates** — newer versions download in the background and apply
+on restart automatically.
+
 ## Features
 
 - **Miller columns** — command tree discovered from each CLI's `--help`

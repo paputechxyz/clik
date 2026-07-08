@@ -78,6 +78,23 @@ export interface PtyEvent {
 
 export type MenuAction = 'new-tab' | 'close-tab' | 'clear-tab'
 
+export type UpdateState =
+  | 'unavailable'
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'not-available'
+  | 'downloading'
+  | 'downloaded'
+  | 'error'
+
+export interface UpdateStatusEvent {
+  state: UpdateState
+  version?: string
+  percent?: number
+  message?: string
+}
+
 export interface DiscoverProgress {
   binaryPath: string
   done: number
@@ -156,4 +173,10 @@ export interface ClikApi {
     onEvent: (cb: (e: PtyEvent) => void) => () => void
   }
   onMenu: (cb: (action: MenuAction) => void) => () => void
+  version: () => Promise<string>
+  update: {
+    check: () => Promise<{ ok: boolean }>
+    restart: () => Promise<void>
+    onStatus: (cb: (e: UpdateStatusEvent) => void) => () => void
+  }
 }

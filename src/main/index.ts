@@ -3,11 +3,14 @@ import path from 'node:path'
 import fs from 'node:fs'
 import { registerIpc, type IpcCleanup } from './ipc'
 import { buildMenu } from './menu'
+import { initUpdater } from './updater'
 
 process.env.APP_ROOT = path.join(__dirname, '..', '..')
 const PRELOAD = path.join(process.env.APP_ROOT, 'out/preload')
 const RENDERER_DIST = path.join(process.env.APP_ROOT, 'out/renderer')
 const LOGO = path.join(process.env.APP_ROOT, 'src/logo.png')
+
+app.setName('clik')
 
 let win: BrowserWindow | null = null
 let ipc: IpcCleanup | null = null
@@ -51,6 +54,7 @@ app.whenReady().then(() => {
   }
   ipc = registerIpc(() => win)
   buildMenu(() => win)
+  initUpdater(() => win)
   createWindow()
 
   app.on('activate', () => {
