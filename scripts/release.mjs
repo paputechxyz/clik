@@ -90,4 +90,8 @@ run('git push --tags')
 run('npm run build')
 run('electron-builder --mac --arm64 --publish always')
 
+// electron-builder publishes as a draft by default; promote it to the public
+// "latest" release so the README link and the in-app updater can find it.
+run(`gh release edit ${tag} --draft=false`)
+
 console.log(`\nDone. ${tag} published to GitHub Releases.`)
