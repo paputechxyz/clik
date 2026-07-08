@@ -167,20 +167,116 @@ function parseKubectlFlags(block: string[]): Flag[] {
   return out
 }
 
-function parseFlagsAuto(block: string[]): Flag[] {
-  return looksLikeKubectlFlags(block) ? parseKubectlFlags(block) : parseFlags(block)
+// yargs prints flags in an "Options:" section with trailing type/default tags
+// instead of cobra's leading "<type>" token, e.g.
+//     -m, --model         model to use in the format of provider/model    [string]
+//         --port          port to listen on                                [number] [default: 0]
+//         --cors          additional domains to allow for CORS             [array] [default: []]
+const YARGS_FLAG_RE = /^\s+(?:-(\w),\s+)?--([\w-]+)(?:\s{2,}([\s\S]+))?$/
+
+function looksLikeYargsFlags(block: string[]): boolean {
+  return block.some((l) => /\[(?:boolean|string|number|array)\]|\[default:/.test(l))
 }
 
-function parseChildren(block: string[]): { name: string; short: string }[] {
-  const out: { name: string; short: string }[] = []
-  for (const line of block) {
-    const m = line.match(CHILD_RE)
-    if (m) out.push({ name: m[1], short: m[2].trim() })
+function coerceYargsDefault(type: FlagType, raw: string): Flag['default'] {
+  if (type === 'stringSlice') {
+    if (raw === '[]') return []
+    return raw
+      .replace(/^\[/, '')
+      .replace(/\]$/, '')
+      .split(',')
+      .map((s) => stripQuotes(s.trim()))
+      .filter((s) => s !== '')
+  }
+  return coerceDefault(type, raw)
+}
+
+function parseYargsFlags(block: string[]): Flag[] {
+  const out: Flag[] = []
+  for (const line of foldLines(block)) {
+    if (!/\[(?:boolean|string|number|array)\]|\[default:/.test(line)) continue
+    const m = line.match(YARGS_FLAG_RE)
+    if (!m) continue
+    const shorthand = m[1]
+    const name = m[2]
+    let desc = (m[3] ?? '').trim()
+
+    let rawDefault: string | undefined
+    const dm = desc.match(/\[default:\s+(.+?)\]\s*$/)
+    if (dm && dm.index !== undefined) {
+      rawDefault = dm[1]
+      desc = desc.slice(0, dm.index).trim()
+    }
+
+    let type: FlagType = 'bool'
+    const tm = desc.match(/\[(boolean|string|number|array)\]/)
+    if (tm) {
+      const t = tm[1]
+      if (t === 'array') type = 'stringSlice'
+      else if (t === 'number') type = rawDefault !== undefined && /\./.test(rawDefault) ? 'float' : 'int'
+      else if (t === 'boolean') type = 'bool'
+      else type = 'string'
+      desc = desc.replace(/\s*\[(?:boolean|string|number|array)\]\s*$/, '').trim()
+    }
+
+    // Drop trailing yargs hint tags we don't model ([choices: ...], [aliases: ...]).
+    desc = desc.replace(/\s*\[(?:choices|aliases):[^\]]*\]\s*$/g, '').trim()
+
+    const def = rawDefault !== undefined ? coerceYargsDefault(type, rawDefault) : undefined
+    out.push({ name, shorthand, type, usage: desc.replace(/\s{2,}/g, ' ').trim(), default: def, rawDefault })
   }
   return out
 }
 
-export function parseHelp(text: string): ParsedHelp {
+function parseFlagsAuto(block: string[]): Flag[] {
+  if (looksLikeYargsFlags(block)) return parseYargsFlags(block)
+  return looksLikeKubectlFlags(block) ? parseKubectlFlags(block) : parseFlags(block)
+}
+
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+// Parse the remainder of a child line after any binary/path prefix has been
+// stripped, e.g. "add [name]     add an MCP server" -> { add, "add an MCP server" }.
+// Strips a leading positional placeholder ("<url>", "[name]", "[message..]")
+// that yargs prints between the command name and its description, and trailing
+// hint tags like "[aliases: ls]" / "[default]".
+function parseChildRest(rest: string): { name: string; short: string } | null {
+  const m = rest.match(/^([A-Za-z0-9][\w-]*)\*?\s+(.*)$/)
+  if (!m) return null
+  let short = m[2].trim()
+  short = short.replace(/^(?:<[^>]+>|\[[^\]]+\])\s{2,}/, '').trim()
+  short = short.replace(/\s*\[(?:aliases:[^\]]*|default)\]\s*$/g, '').trim()
+  return { name: m[1], short }
+}
+
+function parseChildren(block: string[], prefixPath?: string[]): { name: string; short: string }[] {
+  const out: { name: string; short: string }[] = []
+  const prefix = prefixPath && prefixPath.length > 0 ? prefixPath.join(' ') : ''
+  // yargs prefixes every command line with the binary (and parent path), e.g.
+  // "  opencode completion   generate..." or "  opencode mcp add   add an MCP
+  // server". When such a prefix is present, only accept lines that carry it;
+  // otherwise fall back to cobra's bare-name layout ("  search   Search...").
+  const prefixed = prefix !== '' && block.some((l) => new RegExp(`^\\s{2,}${escapeRe(prefix)}\\s`).test(l))
+  if (prefixed) {
+    const re = new RegExp(`^\\s{2,}${escapeRe(prefix)}\\s+(\\S.*)$`)
+    for (const line of block) {
+      const m = line.match(re)
+      if (!m) continue
+      const c = parseChildRest(m[1])
+      if (c) out.push(c)
+    }
+  } else {
+    for (const line of block) {
+      const m = line.match(CHILD_RE)
+      if (m) out.push({ name: m[1], short: m[2].trim() })
+    }
+  }
+  return out
+}
+
+export function parseHelp(text: string, prefixPath?: string[]): ParsedHelp {
   const lines = text.replace(/\r\n/g, '\n').split('\n')
   let headerIdx = lines.findIndex((l) => HEADER_RE.test(l))
   if (headerIdx === -1) headerIdx = lines.length
@@ -209,7 +305,7 @@ export function parseHelp(text: string): ParsedHelp {
   const children: { name: string; short: string }[] = []
   for (const [header, block] of sections) {
     if (isCommandsSection(header)) {
-      children.push(...parseChildren(block))
+      children.push(...parseChildren(block, prefixPath))
     }
   }
 
@@ -226,10 +322,30 @@ export function parseHelp(text: string): ParsedHelp {
   }
 }
 
+const HELP_TIMEOUT_MS = 15000
+
 function runHelp(binaryPath: string, cmdPath: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(binaryPath, [...cmdPath, '--help'], { shell: false })
     let out = ''
+    let settled = false
+    const label = cmdPath.length ? ` ${cmdPath.join(' ')}` : ''
+    const done = (fn: () => void) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      fn()
+    }
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      try {
+        child.kill('SIGKILL')
+      } catch {
+        // ignore
+      }
+      reject(new Error(`"${path.basename(binaryPath)}${label} --help" timed out after ${HELP_TIMEOUT_MS / 1000}s`))
+    }, HELP_TIMEOUT_MS)
     child.stdout.on('data', (d: Buffer) => {
       out += d.toString('utf8')
     })
@@ -237,18 +353,17 @@ function runHelp(binaryPath: string, cmdPath: string[]): Promise<string> {
       out += d.toString('utf8')
     })
     child.on('error', (err) => {
-      const label = cmdPath.length ? ` ${cmdPath.join(' ')}` : ''
       console.error(`[discover] ${path.basename(binaryPath)}${label} --help spawn error:`, err.message)
-      reject(err)
+      done(() => reject(err))
     })
     child.on('exit', (code, signal) => {
-      if (code === 0 || out.length > 0) resolve(out)
-      else {
-        const label = cmdPath.length ? ` ${cmdPath.join(' ')}` : ''
+      if (code === 0 || out.length > 0) {
+        done(() => resolve(out))
+      } else {
         const detail = code !== null ? `code ${code}` : `signal ${signal ?? 'unknown'}`
         const msg = `"${path.basename(binaryPath)}${label} --help" exited with ${detail}`
         console.warn(`[discover] ${path.basename(binaryPath)}${label} --help failed: ${msg}`)
-        reject(new Error(msg))
+        done(() => reject(new Error(msg)))
       }
     })
   })
@@ -265,20 +380,40 @@ async function buildNode(
   cmdPath: string[],
   short: string,
   depth = 0,
+  rootHelp: string | undefined,
+  parentHelp: string | undefined,
   onTopChildDone?: (childName: string, done: number, total: number) => void
 ): Promise<CommandNode> {
   const help = await runHelp(binaryPath, cmdPath)
-  const parsed = parseHelp(help)
+  const baseName = path.basename(binaryPath)
+  const prefixPath = cmdPath.length === 0 ? [baseName] : [baseName, ...cmdPath]
+  const parsed = parseHelp(help, prefixPath)
+  const name = cmdPath.length ? cmdPath[cmdPath.length - 1] : baseName
+
+  // yargs (and other CLIs) fall back to printing a parent's — often the
+  // root's — full help when a command has no dedicated help of its own
+  // (opencode's `completion` reprints the root). Recursing into that would
+  // re-discover the ancestor's children under this node and explode
+  // exponentially. Detect the reprint and stop descending.
+  const isReprint =
+    cmdPath.length > 0 &&
+    ((rootHelp !== undefined && help === rootHelp) ||
+      (parentHelp !== undefined && help === parentHelp))
+  if (isReprint) {
+    return { name, path: cmdPath, use: '', short, long: '', isGroup: false, flags: [], inheritedFlags: [], children: [] }
+  }
+
   const children: CommandNode[] = []
   const visibleChildren = parsed.children.filter((c) => !SKIP_CHILDREN.has(c.name))
   if (visibleChildren.length > 0 && depth < MAX_DEPTH) {
     let done = 0
+    const nextRoot = rootHelp ?? help
     for (const c of visibleChildren) {
       // A single misbehaving subcommand (non-zero exit, no output, plugin that
       // can't be loaded, …) must not abort the whole tree — skip and continue.
       try {
         children.push(
-          await buildNode(binaryPath, [...cmdPath, c.name], c.short, depth + 1)
+          await buildNode(binaryPath, [...cmdPath, c.name], c.short, depth + 1, nextRoot, help, onTopChildDone)
         )
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
@@ -289,7 +424,6 @@ async function buildNode(
       if (depth === 0 && onTopChildDone) onTopChildDone(c.name, done, visibleChildren.length)
     }
   }
-  const name = cmdPath.length ? cmdPath[cmdPath.length - 1] : path.basename(binaryPath)
   return {
     name,
     path: cmdPath,
@@ -320,6 +454,8 @@ export async function discoverTree(
       [],
       '',
       0,
+      undefined,
+      undefined,
       onProgress
         ? (current, done, total) => {
             const pct = total > 0 ? Math.round((done / total) * 100) : 0
@@ -340,7 +476,7 @@ export async function discoverTree(
 }
 
 export async function discoverCommand(binaryPath: string, cmdPath: string[]): Promise<CommandNode> {
-  return buildNode(binaryPath, cmdPath, '', 0)
+  return buildNode(binaryPath, cmdPath, '', 0, undefined, undefined)
 }
 
 export const cobraAdapter: CliAdapter = { name: 'cobra', discover: discoverTree }

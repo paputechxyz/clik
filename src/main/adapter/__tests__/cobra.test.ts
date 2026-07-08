@@ -258,3 +258,60 @@ describe('parseHelp - docker root', () => {
     expect(host.shorthand).toBe('H')
   })
 })
+
+describe('parseHelp - opencode root (yargs)', () => {
+  // yargs lists commands as "  opencode <sub>   <desc>" — without stripping the
+  // binary-name prefix every line would parse to a child named "opencode" and
+  // discovery would recurse exponentially. Pass the binary name as the prefix.
+  const p = parseHelp(fx('opencode-root.txt'), ['opencode'])
+
+  it('strips the binary-name prefix to get real subcommand names', () => {
+    const names = p.children.map((c) => c.name)
+    expect(names).toContain('completion')
+    expect(names).toContain('mcp')
+    expect(names).toContain('debug')
+    expect(names).toContain('plugin')
+    // The default positional "[project]" is not a subcommand and must be dropped.
+    expect(names).not.toContain('[project]')
+    expect(names).not.toContain('opencode')
+    // Every child name is distinct (no explosion of duplicate "opencode" entries).
+    expect(new Set(names).size).toBe(names.length)
+  })
+
+  it('keeps clean short descriptions, dropping positional placeholders and aliases hints', () => {
+    const attach = p.children.find((c) => c.name === 'attach')!
+    expect(attach.short).toBe('attach to a running opencode server')
+    const run = p.children.find((c) => c.name === 'run')!
+    expect(run.short).toBe('run opencode with a message')
+    const providers = p.children.find((c) => c.name === 'providers')!
+    expect(providers.short).toBe('manage AI providers and credentials')
+  })
+
+  it('parses yargs trailing-tag flags with types and defaults', () => {
+    const help = p.flags.find((f) => f.name === 'help')!
+    expect(help.type).toBe('bool')
+    expect(help.shorthand).toBe('h')
+    expect(help.usage).toBe('show help')
+
+    const port = p.flags.find((f) => f.name === 'port')!
+    expect(port.type).toBe('int')
+    expect(port.default).toBe(0)
+    expect(port.rawDefault).toBe('0')
+
+    const hostname = p.flags.find((f) => f.name === 'hostname')!
+    expect(hostname.type).toBe('string')
+    expect(hostname.default).toBe('127.0.0.1')
+
+    const mdns = p.flags.find((f) => f.name === 'mdns')!
+    expect(mdns.type).toBe('bool')
+    expect(mdns.default).toBe(false)
+
+    const cors = p.flags.find((f) => f.name === 'cors')!
+    expect(cors.type).toBe('stringSlice')
+    expect(cors.default).toEqual([])
+
+    const model = p.flags.find((f) => f.name === 'model')!
+    expect(model.type).toBe('string')
+    expect(model.shorthand).toBe('m')
+  })
+})
