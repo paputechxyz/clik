@@ -228,9 +228,60 @@ function parseYargsFlags(block: string[]): Flag[] {
   return out
 }
 
+// GNU/getopt-style flags (psql and many C tools) attach an UPPERCASE value
+// placeholder to the long option with "=", e.g.
+//     -c, --command=COMMAND    run only single command (SQL or internal) and exit
+//     -p, --port=PORT          database server port (default: "5432")
+//     -F, --field-separator=STRING
+//                            field separator for unaligned output (default: "|")
+// (defaults are inline as "(default: X)", with a colon — cobra uses a space).
+const GETOPT_FLAG_RE = /^\s+(?:-([^\s,]),\s+)?--([a-zA-Z][\w-]*)(?:=(\S*)|\[=\S*\])?(?:\s+(.*))?$/
+
+function looksLikeGetoptFlags(block: string[]): boolean {
+  // A long option followed by "=UPPERCASE" placeholder. Excludes kubectl's
+  // "=value:" form (lowercase value, trailing colon), which has its own parser.
+  return block.some((l) => /^\s+(?:-\w,\s+)?--[a-zA-Z][\w-]*=[A-Z][A-Za-z0-9_]*/.test(l))
+}
+
+function parseGetoptFlags(block: string[]): Flag[] {
+  const out: Flag[] = []
+  for (const line of foldLines(block)) {
+    const m = line.match(GETOPT_FLAG_RE)
+    if (!m) continue
+    const shorthand = m[1]
+    const name = m[2]
+    // undefined => no "=" (bool); "" => "--name="; "<UPPER>" => takes a value.
+    const placeholder = m[3]
+    let usage = (m[4] ?? '').trim()
+
+    let rawDef: string | undefined
+    const dm = usage.match(/\(default:?\s+(.+?)\)\s*$/)
+    if (dm && dm.index !== undefined) {
+      rawDef = stripQuotes(dm[1])
+      usage = usage.slice(0, dm.index).trim()
+    }
+
+    let type: FlagType
+    if (placeholder === undefined) type = 'bool'
+    else if (rawDef !== undefined) {
+      if (/^-?\d+$/.test(rawDef)) type = 'int'
+      else if (/^-?\d*\.\d+$/.test(rawDef)) type = 'float'
+      else type = 'string'
+    } else {
+      type = 'string'
+    }
+
+    const def = rawDef !== undefined ? coerceDefault(type, rawDef) : undefined
+    out.push({ name, shorthand, type, usage: usage.replace(/\s{2,}/g, ' ').trim(), default: def, rawDefault: rawDef })
+  }
+  return out
+}
+
 function parseFlagsAuto(block: string[]): Flag[] {
   if (looksLikeYargsFlags(block)) return parseYargsFlags(block)
-  return looksLikeKubectlFlags(block) ? parseKubectlFlags(block) : parseFlags(block)
+  if (looksLikeKubectlFlags(block)) return parseKubectlFlags(block)
+  if (looksLikeGetoptFlags(block)) return parseGetoptFlags(block)
+  return parseFlags(block)
 }
 
 function escapeRe(s: string): string {
@@ -312,12 +363,24 @@ export function parseHelp(text: string, prefixPath?: string[]): ParsedHelp {
   // docker uses "Options" / "Global Options" where cobra uses "Flags" /
   // "Global Flags"; accept both so docker subcommands surface their flags.
   // kubectl subcommands use "Options" too but with a different per-flag
-  // layout; parseFlagsAuto detects and handles that.
+  // layout; parseFlagsAuto detects and handles that. psql splits flags across
+  // "General options", "Input and output options", "Connection options", ...
+  // so gather every section whose header is flag-shaped (ends with
+  // "options"/"flags"), separating global from local.
+  const flagBlocks: string[] = []
+  const globalFlagBlocks: string[] = []
+  for (const header of sections.keys()) {
+    const h = header.toLowerCase()
+    const isFlagSection = h === 'flags' || h === 'options' || h.endsWith(' options') || h.endsWith(' flags')
+    if (!isFlagSection) continue
+    if (h.includes('global')) globalFlagBlocks.push(...body(header))
+    else flagBlocks.push(...body(header))
+  }
   return {
     long,
     usage: usageLine.trim(),
-    flags: parseFlagsAuto([...body('Flags'), ...body('Options')]),
-    globalFlags: parseFlagsAuto([...body('Global Flags'), ...body('Global Options')]),
+    flags: parseFlagsAuto(flagBlocks),
+    globalFlags: parseFlagsAuto(globalFlagBlocks),
     children
   }
 }

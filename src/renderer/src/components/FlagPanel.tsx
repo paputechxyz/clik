@@ -27,7 +27,7 @@ export function FlagPanel(): JSX.Element {
     node = next
   }
 
-  if (selection.length === 0 || node.isGroup) {
+  if (node.isGroup) {
     return <EmptyFlags text="Select a leaf command to edit its flags." />
   }
 

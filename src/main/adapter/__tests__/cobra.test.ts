@@ -315,3 +315,62 @@ describe('parseHelp - opencode root (yargs)', () => {
     expect(model.shorthand).toBe('m')
   })
 })
+
+describe('parseHelp - psql root (GNU/getopt)', () => {
+  // psql has no subcommands (it's an interactive client) and splits its options
+  // across "General options", "Input and output options", ... headers. Flags use
+  // the "--name=PLACEHOLDER" getopt layout with inline "(default: X)" values.
+  const p = parseHelp(fx('psql-root.txt'))
+
+  it('is a leaf (no command sections => no children)', () => {
+    expect(p.children).toHaveLength(0)
+  })
+
+  it('keeps the usage line', () => {
+    expect(p.usage).toContain('psql [OPTION]')
+  })
+
+  it('gathers flags from every "* options" section', () => {
+    const names = p.flags.map((f) => f.name)
+    // General options
+    expect(names).toContain('command')
+    expect(names).toContain('dbname')
+    expect(names).toContain('file')
+    // Connection options
+    expect(names).toContain('host')
+    expect(names).toContain('port')
+    expect(names).toContain('username')
+    // Output format options
+    expect(names).toContain('field-separator')
+    expect(names).toContain('csv')
+    expect(p.flags.length).toBeGreaterThanOrEqual(30)
+  })
+
+  it('parses "--name=PLACEHOLDER" value flags as string', () => {
+    const cmd = p.flags.find((f) => f.name === 'command')!
+    expect(cmd.type).toBe('string')
+    expect(cmd.shorthand).toBe('c')
+    expect(cmd.usage).toContain('run only single command')
+  })
+
+  it('types --port as int with its quoted numeric default', () => {
+    const port = p.flags.find((f) => f.name === 'port')!
+    expect(port.type).toBe('int')
+    expect(port.default).toBe(5432)
+    expect(port.rawDefault).toBe('5432')
+  })
+
+  it('extracts inline "(default: X)" defaults and strips quotes', () => {
+    const dbname = p.flags.find((f) => f.name === 'dbname')!
+    expect(dbname.type).toBe('string')
+    expect(dbname.default).toBe('patrickpu')
+    const host = p.flags.find((f) => f.name === 'host')!
+    expect(host.default).toBe('local socket')
+  })
+
+  it('types bare "--flag" options as bool', () => {
+    for (const n of ['list', 'csv', 'echo-all', 'no-password', 'quiet']) {
+      expect(p.flags.find((f) => f.name === n)?.type).toBe('bool')
+    }
+  })
+})

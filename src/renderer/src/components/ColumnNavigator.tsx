@@ -46,7 +46,7 @@ export function ColumnNavigator({ onAddCommand }: { onAddCommand: () => void }):
   }, [])
 
   const cmdColumns: Column[] = []
-  if (tree) {
+  if (tree && tree.root.children.length > 0) {
     cmdColumns.push({ items: tree.root.children, selected: selection[0], depth: 0 })
     let cur: CommandNode = tree.root
     for (let i = 0; i < selection.length; i++) {
@@ -211,14 +211,16 @@ export function ColumnNavigator({ onAddCommand }: { onAddCommand: () => void }):
   }
 
   let flagsTitle = 'Flags'
-  if (tree && selection.length > 0) {
+  if (tree) {
     let node: CommandNode = tree.root
     for (const seg of selection) {
       const next = node.children.find((c) => c.name === seg)
       if (!next) break
       node = next
     }
-    if (selection.length > 0 && !node.isGroup) flagsTitle = selection.join(' ')
+    if (!node.isGroup) {
+      flagsTitle = selection.length > 0 ? selection.join(' ') : tree.binaryName
+    }
   }
   panels.push({ key: 'flags', title: flagsTitle, details: true, body: <FlagPanel /> })
 
