@@ -5,7 +5,7 @@ import { useLayoutStore } from '../store/useLayoutStore'
 import { FlagPanel } from './FlagPanel'
 import { LibraryColumn } from './LibraryColumn'
 import { Resizer } from './Resizer'
-import { ChevronLeftIcon, ChevronRightIcon, ImportIcon, PlusIcon, RefreshIcon } from './icons'
+import { ChevronLeftIcon, ChevronRightIcon, PlusIcon, RefreshIcon } from './icons'
 
 interface Column {
   items: CommandNode[]
@@ -69,7 +69,7 @@ export function ColumnNavigator({ onAddCommand }: { onAddCommand: () => void }):
           title="Import a command string (parses flags into the UI)"
           onClick={() => setImportOpen((v) => !v)}
         >
-          <ImportIcon />
+          <PlusIcon />
         </button>
         <button
           className="icon-btn small"
