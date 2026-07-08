@@ -1,6 +1,6 @@
-// One-command release: bump semver -> commit -> tag -> push -> build -> publish.
+// One-command release: bump semver -> build -> sign -> commit -> tag -> push -> publish.
 // Usage: npm run release [patch|minor|major]   (default: patch)
-// Requires GH_TOKEN in the environment for the publish step.
+// Requires GH_TOKEN (or an authenticated `gh`) for the publish step.
 import { execSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
@@ -79,6 +79,35 @@ if (raw === updated) {
 }
 writeFileSync(pkgPath, updated)
 
+// Build the .app dir, ad-hoc sign it, THEN commit/tag/push and publish.
+// Building and signing before the git operations means a failed build leaves
+// no orphaned tag. electron-builder skips code signing when no Developer ID is
+// set, leaving a broken partial signature that Gatekeeper reports as
+// "damaged" — even the xattr bypass can't rescue it. Clearing xattr detritus
+// and applying a consistent deep ad-hoc signature before packaging makes the
+// bundle valid on disk, so downloaders only need the one-time Gatekeeper bypass.
+const appDir = 'dist/mac-arm64/CLIk.app'
+run('npm run build')
+run('electron-builder --mac --arm64 --dir')
+
+// macOS re-stamps xattrs (FinderInfo/provenance) on this iCloud-managed path
+// asynchronously, so the clear+sign can race and fail with "detritus not
+// allowed". Retry until the signature verifies.
+for (let attempt = 1; attempt <= 4; attempt++) {
+  run(`xattr -cr ${appDir}`)
+  try {
+    execSync(`codesign --force --deep --sign - ${appDir}`, { stdio: 'inherit', cwd: root })
+    execSync(`codesign --verify --verbose=4 ${appDir}`, { stdio: 'inherit', cwd: root })
+    break
+  } catch {
+    if (attempt === 4) {
+      console.error(`codesign failed after ${attempt} attempts`)
+      process.exit(1)
+    }
+    console.log(`codesign attempt ${attempt} failed (detritus race); retrying…`)
+  }
+}
+
 // Commit, tag, push.
 run('git add package.json')
 run(`git commit -m "chore: release ${tag}"`)
@@ -86,17 +115,7 @@ run(`git tag ${tag}`)
 run('git push')
 run('git push --tags')
 
-// Build the .app dir, ad-hoc sign it, then package + publish.
-// electron-builder skips code signing when no Developer ID is set, leaving a
-// broken partial signature that Gatekeeper reports as "damaged" — even the
-// xattr bypass can't rescue it. Clearing xattr detritus and applying a
-// consistent deep ad-hoc signature before packaging makes the bundle valid on
-// disk, so downloaders only need the one-time Gatekeeper bypass.
-const appDir = 'dist/mac-arm64/CLIk.app'
-run('npm run build')
-run('electron-builder --mac --arm64 --dir')
-run(`xattr -cr ${appDir}`)
-run(`codesign --force --deep --sign - ${appDir}`)
+// Package the signed app into DMG/ZIP and publish to GitHub Releases.
 run(`electron-builder --mac --arm64 --prepackaged ${appDir} --publish always`)
 
 // electron-builder publishes as a draft by default; promote it to the public

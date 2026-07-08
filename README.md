@@ -26,7 +26,7 @@ Grab the `CLIk-<version>-arm64.dmg` from the latest release, open it, and drag
 > once with either:
 >
 > - **Right-click** CLIk → **Open** → **Open** on the prompt; or
-> - in Terminal: `xattr -dr com.apple.quarantine /Applications/CLIk.app`
+> - in Terminal: `xattr -cr /Applications/CLIk.app`
 >
 > After that, the app and its in-app updates open normally.
 
