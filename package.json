@@ -1,7 +1,7 @@
 {
   "name": "clik",
   "version": "0.1.3",
-  "description": "Clickable CLI — macOS Finder-style column GUI for any cobra CLI",
+  "description": "Clickable CLI — macOS Finder-style column GUI for any CLI",
   "main": "out/main/index.js",
   "license": "MIT",
   "scripts": {
