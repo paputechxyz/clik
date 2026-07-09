@@ -34,13 +34,18 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
   const [shellStatus, setShellStatus] = useState<ShellEnvStatus | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [suggestions, setSuggestions] = useState<ResolvedCommand[]>([])
+  const [suggestionsLoaded, setSuggestionsLoaded] = useState(false)
   const [version, setVersion] = useState('')
   const [update, setUpdate] = useState<UpdateStatusEvent>({ state: 'idle' })
   const [checking, setChecking] = useState(false)
+  const [pathOpen, setPathOpen] = useState(false)
 
   useEffect(() => {
     void window.clik.shellEnv.status().then(setShellStatus)
-    void window.clik.scan.suggest().then(setSuggestions)
+    void window.clik.scan.suggest().then((s) => {
+      setSuggestions(s)
+      setSuggestionsLoaded(true)
+    })
     void window.clik.version().then(setVersion)
     const off = window.clik.update.onStatus((e) => {
       setUpdate(e)
@@ -179,23 +184,41 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
             </div>
           </fieldset>
 
-          {discovered.length > 0 && (
+          {(!suggestionsLoaded || discovered.length > 0) && (
             <fieldset className="entry-fieldset">
-              <legend>Discovered on your PATH</legend>
-              <div className="suggest-text">Click to add — binary path is pre-filled from <code>which</code>.</div>
-              <div className="suggest-grid">
-                {discovered.map((s) => (
-                  <button
-                    key={s.name}
-                    className="suggest-chip"
-                    title={s.path}
-                    onClick={() => void add(s.name, s.path)}
-                  >
-                    <span className="suggest-name">{s.name}</span>
-                    <span className="suggest-path">{s.path}</span>
-                  </button>
-                ))}
-              </div>
+              <legend
+                className="collapsible-legend"
+                onClick={() => suggestionsLoaded && setPathOpen((o) => !o)}
+                title={suggestionsLoaded ? (pathOpen ? 'Collapse' : 'Expand') : 'Scanning…'}
+              >
+                <span className="legend-arrow" aria-expanded={pathOpen}>{pathOpen ? '▼' : '▶'}</span>
+                Discovered on your PATH
+                {suggestionsLoaded ? (
+                  discovered.length > 0 && <span className="legend-count"> ({discovered.length})</span>
+                ) : (
+                  <span className="legend-count legend-loading"> …</span>
+                )}
+              </legend>
+              {!suggestionsLoaded ? (
+                <div className="suggest-placeholder" />
+              ) : pathOpen ? (
+                <>
+                  <div className="suggest-text">Click to add — binary path is pre-filled from <code>which</code>.</div>
+                  <div className="suggest-grid">
+                    {discovered.map((s) => (
+                      <button
+                        key={s.name}
+                        className="suggest-chip"
+                        title={s.path}
+                        onClick={() => void add(s.name, s.path)}
+                      >
+                        <span className="suggest-name">{s.name}</span>
+                        <span className="suggest-path">{s.path}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : null}
             </fieldset>
           )}
 
