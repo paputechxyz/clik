@@ -7,11 +7,17 @@ type BaseEnvProvider = () => Record<string, string>
 
 export class PtyManager {
   private handles = new Map<string, pty.IPty>()
+  private disposed = false
 
   constructor(
     private emit: Emitter,
     private baseEnv: BaseEnvProvider = () => process.env as Record<string, string>
   ) {}
+
+  private safeEmit(id: string, channel: PtyChannel, payload: unknown): void {
+    if (this.disposed) return
+    this.emit(id, channel, payload)
+  }
 
   open(req: PtyOpenRequest): string {
     const id = randomUUID()
@@ -22,11 +28,11 @@ export class PtyManager {
       rows: req.rows ?? 24
     })
     this.handles.set(id, p)
-    p.onData((d) => this.emit(id, 'data', d))
+    p.onData((d) => this.safeEmit(id, 'data', d))
     p.onExit(({ exitCode, signal }) => {
       this.handles.delete(id)
       const payload: PtyExitPayload = { code: exitCode, signal }
-      this.emit(id, 'exit', payload)
+      this.safeEmit(id, 'exit', payload)
     })
     return id
   }
@@ -62,5 +68,11 @@ export class PtyManager {
 
   killAll(): void {
     for (const id of [...this.handles.keys()]) this.kill(id)
+  }
+
+  dispose(): void {
+    this.disposed = true
+    this.killAll()
+    this.handles.clear()
   }
 }

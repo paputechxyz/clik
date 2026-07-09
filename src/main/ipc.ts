@@ -25,8 +25,10 @@ export function registerIpc(getWin: () => BrowserWindow | null): IpcCleanup {
     // fallback: shellEnv.current stays process.env; surfaced via shell-env:status
   })
   const ptys = new PtyManager((id, channel, payload) => {
+    const w = getWin()
+    if (!w || w.isDestroyed()) return
     const evt: PtyEvent = { id, channel, payload }
-    getWin()?.webContents.send('pty:event', evt)
+    w.webContents.send('pty:event', evt)
   }, () => shellEnv.current)
 
   ipcMain.handle('cli:discover', async (e, binaryPath: string, forceFresh?: boolean): Promise<CommandTree> => {
@@ -125,5 +127,5 @@ export function registerIpc(getWin: () => BrowserWindow | null): IpcCleanup {
   })
   ipcMain.handle('pty:kill', (_e, id: string) => ptys.kill(id))
 
-  return { stopAll: () => ptys.killAll() }
+  return { stopAll: () => ptys.dispose() }
 }

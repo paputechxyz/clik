@@ -109,4 +109,25 @@ describe('PtyManager', () => {
     mgr.killAll()
     expect(ptyModule.__spawned.every((f) => f.killed !== null)).toBe(true)
   })
+
+  it('dispose() kills all ptys and stops emitting further data + exit', () => {
+    const events: Array<{ id: string; channel: string; payload: unknown }> = []
+    const mgr = new PtyManager((id, channel, payload) => events.push({ id, channel, payload }))
+    mgr.open({ file: '/bin/a', args: [], env: {} })
+    mgr.open({ file: '/bin/b', args: [], env: {} })
+    const fakes = ptyModule.__spawned.slice(-2)
+
+    mgr.dispose()
+
+    expect(fakes.every((f) => f.killed !== null)).toBe(true)
+    expect(events).toHaveLength(0)
+
+    fakes.forEach((f) => {
+      f.emitData('late\r\n')
+      f.emitExit(0)
+    })
+    expect(events).toHaveLength(0)
+
+    expect(mgr.input('x', 'y')).toBe(false)
+  })
 })
