@@ -77,6 +77,33 @@ describe('buildArgv', () => {
       '--no-flag-ish'
     ])
   })
+
+  it('keeps $(...) command substitution as a single token', () => {
+    expect(shellSplit('-9 $(lsof -t -i:8080)')).toEqual(['-9', '$(lsof -t -i:8080)'])
+  })
+
+  it('keeps ${...} parameter expansion as a single token', () => {
+    expect(shellSplit('--out ${HOME}/x y')).toEqual(['--out', '${HOME}/x', 'y'])
+  })
+
+  it('keeps backtick command substitution as a single token', () => {
+    expect(shellSplit('a `echo hi there` b')).toEqual(['a', '`echo hi there`', 'b'])
+  })
+
+  it('handles nested $(...) substitution', () => {
+    expect(shellSplit('$(echo $(date +%Y)) extra')).toEqual([
+      '$(echo $(date +%Y))',
+      'extra'
+    ])
+  })
+
+  it('preserves quotes inside substitution verbatim', () => {
+    expect(shellSplit('$(echo "hi there")')).toEqual(['$(echo "hi there")'])
+  })
+
+  it('still strips top-level quotes', () => {
+    expect(shellSplit('"foo bar" $(x)')).toEqual(['foo bar', '$(x)'])
+  })
 })
 
 describe('shellQuote', () => {
@@ -86,8 +113,10 @@ describe('shellQuote', () => {
     )
   })
 
-  it('single-quotes tokens with spaces or special chars', () => {
-    expect(shellQuote(['foo bar', 'a$b', "O'Brien"])).toBe("'foo bar' 'a$b' 'O'\\''Brien'")
+  it('single-quotes special chars but leaves shell expansion raw', () => {
+    expect(shellQuote(['foo bar', 'a$b', "O'Brien", '$(lsof -t -i:8080)'])).toBe(
+      "'foo bar' a$b 'O'\\''Brien' $(lsof -t -i:8080)"
+    )
   })
 
   it('quotes an empty token as two single quotes', () => {

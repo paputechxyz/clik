@@ -490,7 +490,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   saveCurrentCommand() {
     const { selectedEntryId, trees, selection, flagValues, positionalArgs, entries } = get()
-    if (!selectedEntryId || selection.length === 0) return
+    if (!selectedEntryId) return
     const entry = entries.find((e) => e.id === selectedEntryId)
     const tree = trees[selectedEntryId]
     if (!entry || !tree) return

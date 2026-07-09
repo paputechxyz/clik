@@ -78,9 +78,16 @@ export function commandPreviewTokens(binaryName: string, argv: string[]): Previe
 
 const SAFE_TOKEN_RE = /^[A-Za-z0-9_@%+=:,./-]+$/
 
+// Detects shell command/parameter expansion that should be *evaluated* by the
+// shell rather than neutralised by single-quoting. Tokens containing expansion
+// are emitted raw so the shell interprets them naturally (e.g. `$(lsof -t -i:8080)`
+// runs the command substitution instead of being treated as a literal string).
+const SHELL_EXPANSION_RE = /`|\$\(|\$\{|\$[A-Za-z_@*?#!]|\$\d/
+
 export function shellQuoteToken(tok: string): string {
   if (tok === '') return "''"
   if (SAFE_TOKEN_RE.test(tok)) return tok
+  if (SHELL_EXPANSION_RE.test(tok)) return tok
   return "'" + tok.replace(/'/g, "'\\''") + "'"
 }
 
@@ -93,8 +100,15 @@ export function shellSplit(input: string): string[] {
   let cur = ''
   let quote: '"' | "'" | null = null
   let escaped = false
+  // Nesting stack of closers we await inside command/parameter substitution
+  // and bracketed regions (')', '}', or '`'). While non-empty we do NOT split on
+  // whitespace, so `$(lsof -t -i:8080)` stays one token.
+  const stack: string[] = []
+
   for (let i = 0; i < input.length; i++) {
     const c = input[i]
+    const next = input[i + 1] ?? ''
+
     if (escaped) {
       cur += c
       escaped = false
@@ -104,15 +118,62 @@ export function shellSplit(input: string): string[] {
       escaped = true
       continue
     }
+
+    // Inside a top-level quote: copy chars verbatim, strip the matching quote.
     if (quote) {
       if (c === quote) quote = null
       else cur += c
       continue
     }
-    if (c === '"' || c === "'") {
+
+    // Top-level quote opener (only outside substitution).
+    if (stack.length === 0 && (c === '"' || c === "'")) {
       quote = c
       continue
     }
+
+    // Substitution / bracket openers (recognised at top level and nested).
+    if (c === '$' && next === '(') {
+      cur += '$('
+      stack.push(')')
+      i++
+      continue
+    }
+    if (c === '$' && next === '{') {
+      cur += '${'
+      stack.push('}')
+      i++
+      continue
+    }
+    if (c === '(') {
+      cur += '('
+      stack.push(')')
+      continue
+    }
+    if (c === '{') {
+      cur += '{'
+      stack.push('}')
+      continue
+    }
+    // Backticks toggle: close the innermost backtick region, otherwise open one.
+    if (c === '`') {
+      if (stack.length > 0 && stack[stack.length - 1] === '`') stack.pop()
+      else stack.push('`')
+      cur += '`'
+      continue
+    }
+
+    // Inside a protected region: everything is literal (including quotes, which
+    // are part of the shell command and must be preserved). Pop when we hit the
+    // matching closer; nested openers are handled above.
+    if (stack.length > 0) {
+      const top = stack[stack.length - 1]
+      if (c === top) stack.pop()
+      cur += c
+      continue
+    }
+
+    // Top-level whitespace splits tokens.
     if (c === ' ' || c === '\t') {
       if (cur !== '') {
         out.push(cur)
