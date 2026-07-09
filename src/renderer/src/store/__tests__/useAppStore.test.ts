@@ -234,6 +234,74 @@ describe('library folders, move/reorder, migration behavior', () => {
     expect(s.history).toEqual([hist]) // not purged
   })
 
+  it('addEntry re-links orphaned saved/history to the re-added entry (new UUID)', async () => {
+    const libSave = vi.fn<(d: LibraryData) => Promise<void>>(async () => undefined)
+    installApi({
+      discover: vi.fn(async () => treeWithLeaf()),
+      registry: {
+        list: async () => [],
+        add: async (e) => ({ id: 'fresh-id', ...e }), // registry.add → randomUUID
+        update: async (e) => e,
+        remove: async () => undefined
+      },
+      library: { get: async () => ({ saved: [], history: [], folders: [] }), save: libSave }
+    })
+    const item = saved('s1') // entryId 'e1', entryName 'x', binaryName 'x'
+    const hist: HistoryItem = { ...item, id: 'h1' }
+    useAppStore.setState({ entries: [], saved: [item], history: [hist] })
+    await useAppStore.getState().addEntry({ name: 'x', binaryPath: '/bin/x', env: {} })
+    const s = useAppStore.getState()
+    expect(s.entries[0].id).toBe('fresh-id')
+    expect(s.saved[0].entryId).toBe('fresh-id')
+    expect(s.history[0].entryId).toBe('fresh-id')
+    // relinked data is persisted back to the library
+    expect(libSave).toHaveBeenCalled()
+    expect(libSave.mock.calls.at(-1)![0].saved[0].entryId).toBe('fresh-id')
+  })
+
+  it('relinked saved command loads after remove + re-add (loadCommand no-op bug)', async () => {
+    const discover = vi.fn(async (): Promise<CommandTree> => treeWithLeaf())
+    installApi({
+      discover,
+      registry: {
+        list: async () => [],
+        add: async (e) => ({ id: 'fresh-id', ...e }),
+        update: async (e) => e,
+        remove: async () => undefined
+      },
+      library: { get: async () => ({ saved: [], history: [], folders: [] }), save: async () => undefined }
+    })
+    // saved command references the OLD (removed) entry id, same CLI by name
+    useAppStore.setState({ entries: [], saved: [saved('s1')] })
+    await useAppStore.getState().addEntry({ name: 'x', binaryPath: '/bin/x', env: {} })
+    const relinked = useAppStore.getState().saved[0]
+    await useAppStore.getState().loadCommand(relinked)
+    const s = useAppStore.getState()
+    expect(s.selectedEntryId).toBe('fresh-id')
+    expect(s.selection).toEqual(['sub'])
+  })
+
+  it('addEntry does not re-link saved commands that still resolve to an entry', async () => {
+    installApi({
+      discover: vi.fn(async () => treeWithLeaf()),
+      registry: {
+        list: async () => [],
+        add: async (e) => ({ id: 'fresh-id', ...e }),
+        update: async (e) => e,
+        remove: async () => undefined
+      },
+      library: { get: async () => ({ saved: [], history: [], folders: [] }), save: async () => undefined }
+    })
+    const live = saved('live') // entryId 'e1' still exists
+    useAppStore.setState({
+      entries: [{ id: 'e1', name: 'x', binaryPath: '/bin/x', env: {} }],
+      saved: [live]
+    })
+    await useAppStore.getState().addEntry({ name: 'y', binaryPath: '/bin/y', env: {} })
+    // existing valid link untouched
+    expect(useAppStore.getState().saved[0].entryId).toBe('e1')
+  })
+
   it('saveCurrentCommand appends at the end of root (no A–Z sort), folderId null', () => {
     // Seed with items on a *different* entry so the dedup guard doesn't no-op the save.
     const seed: SavedCommandItem[] = [

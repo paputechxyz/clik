@@ -134,6 +134,11 @@ function findNode(tree: CommandTree, selection: string[]): CommandNode | null {
   return node
 }
 
+function pathBase(p: string): string {
+  const i = p.lastIndexOf('/')
+  return i === -1 ? p : p.slice(i + 1)
+}
+
 type StoreSet = (partial: Partial<AppState> | ((s: AppState) => Partial<AppState>)) => void
 type StoreGet = () => AppState
 
@@ -272,6 +277,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       shellName = ''
     }
     set({ entries, shellName })
+    relinkOrphans(get, set)
     const { selectedEntryId } = get()
     const targetId =
       selectedEntryId && entries.some((e) => e.id === selectedEntryId)
@@ -290,6 +296,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         history: Array.isArray(data.history) ? data.history : [],
         folders: Array.isArray(data.folders) ? data.folders : []
       })
+      relinkOrphans(get, set)
     } catch {
       // leave empty defaults; main process is unreachable (rare)
     }
@@ -298,6 +305,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   async addEntry(entry) {
     const created = await window.clik.registry.add(entry)
     set({ entries: [...get().entries, created] })
+    relinkOrphans(get, set)
     if (!get().selectedEntryId) await get().selectEntry(created.id)
   },
 
@@ -789,6 +797,39 @@ function applySelectionToFlags(
   } else {
     set({ flagValues: {}, positionalArgs: '' })
   }
+}
+
+// Re-link saved/history commands whose entryId no longer points at a registered
+// CLI. Removing a CLI keeps its saved commands (plan R9); re-adding assigns a
+// fresh UUID (registry.add → randomUUID), so the orphaned commands would
+// otherwise be dead clicks in loadCommand. Match by entry display name or by
+// the binary basename so the command binds to the re-added entry again.
+function relinkOrphans(get: StoreGet, set: StoreSet): void {
+  const { entries, saved, history } = get()
+  if (entries.length === 0) return
+  const ids = new Set(entries.map((e) => e.id))
+  const matchFor = (item: { entryName: string; binaryName: string }): CliEntry | undefined =>
+    entries.find(
+      (e) => e.name === item.entryName || pathBase(e.binaryPath) === item.binaryName
+    )
+  let changed = false
+  const relink = <T extends { entryId: string; entryName: string; binaryName: string }>(
+    arr: T[]
+  ): T[] =>
+    arr.map((it) => {
+      if (ids.has(it.entryId)) return it
+      const m = matchFor(it)
+      if (m && m.id !== it.entryId) {
+        changed = true
+        return { ...it, entryId: m.id }
+      }
+      return it
+    })
+  const nextSaved = relink(saved)
+  const nextHistory = relink(history)
+  if (!changed) return
+  set({ saved: nextSaved, history: nextHistory })
+  persistLibrary(nextSaved, nextHistory, get().folders)
 }
 
 function persistCurrentCommand(): void {
