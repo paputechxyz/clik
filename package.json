@@ -1,6 +1,6 @@
 {
   "name": "clik",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Clickable CLI — macOS Finder-style column GUI for any CLI",
   "main": "out/main/index.js",
   "license": "MIT",
