@@ -270,12 +270,14 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
                   onChange={(ev) => updateField(e, { env: parseEnv(ev.target.value) })}
                 />
               </div>
-              <button className="ghost-btn danger" onClick={() => void removeEntry(e.id)}>
-                Remove
-              </button>
-              <button className="ghost-btn" title="Re-run discovery on the binary" onClick={() => void refreshEntry(e.id)}>
-                Re-analyze
-              </button>
+              <div className="entry-actions">
+                <button className="ghost-btn danger" onClick={() => void removeEntry(e.id)}>
+                  Remove
+                </button>
+                <button className="ghost-btn" title="Re-run discovery on the binary" onClick={() => void refreshEntry(e.id)}>
+                  Re-analyze
+                </button>
+              </div>
             </fieldset>
           ))}
 
