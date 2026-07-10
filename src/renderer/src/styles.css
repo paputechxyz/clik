@@ -527,7 +527,7 @@ button { font-family: var(--font-ui); color: inherit; }
   font-size: var(--text-xs); color: var(--fg-muted);
   background: color-mix(in oklch, var(--fg) 8%, transparent);
   border-radius: var(--radius-pill); padding: 0 var(--space-2); line-height: 15px;
-  font-variant-numeric: tabular-nums; flex: 0 0 auto;
+  font-variant-numeric: tabular-nums; flex: 0 0 auto; margin-right: var(--space-3);
 }
 .lib-folder-tools { display: inline-flex; align-items: center; flex: 0 0 auto; padding-right: var(--space-1); }
 .lib-folder-list { list-style: none; margin: 0; padding: 0 var(--space-1) var(--space-1) 0; }

@@ -441,7 +441,7 @@ export function LibraryColumn(): JSX.Element {
         />
       )}
 
-      <div className={`lib-panel${historyCollapsed ? ' collapsed' : ''}`} style={{ flex: historyCollapsed ? '0 0 26px' : `${historyWeight} 1 0`, minHeight: 0 }}>
+      <div className={`lib-panel${historyCollapsed ? ' collapsed' : ''}`} style={{ flex: historyCollapsed ? '0 0 26px' : `${historyWeight} 1 0`, minHeight: historyCollapsed ? 0 : 80 }}>
         <div className="lib-head">
           <button
             className="lib-head-toggle"
@@ -643,7 +643,6 @@ function FolderGroup({
           ) : (
             <span className="lib-folder-name">{folder.name}</span>
           )}
-          {!isEditing && <span className="lib-folder-count">{commands.length}</span>}
         </button>
         {!isEditing && (
           <span className="lib-folder-tools">
@@ -659,6 +658,7 @@ function FolderGroup({
             </button>
           </span>
         )}
+        {!isEditing && <span className="lib-folder-count">{commands.length}</span>}
       </div>
       {!collapsed && commands.length > 0 && (
         <ul className="lib-folder-list">
