@@ -3,6 +3,12 @@ import path from 'node:path'
 import type { CommandNode, CommandTree, Flag, FlagType } from '../../shared/types'
 import type { CliAdapter } from './types'
 
+// Strip ANSI escape codes (gcloud and other CLIs embed colour/formatting codes).
+const ANSI_RE = /\x1b\[[0-9;]*[A-Za-z]/g
+function stripAnsi(s: string): string {
+  return s.replace(ANSI_RE, '')
+}
+
 // Cobra/kubectl/docker print section headers in Title Case WITH a trailing
 // colon ("Usage:", "Available Commands:", "Basic Commands (Beginner):"). The
 // gh CLI prints them in ALL UPPERCASE with NO colon ("USAGE", "CORE COMMANDS",
@@ -11,7 +17,8 @@ import type { CliAdapter } from './types'
 const HEADER_RE =
   /^[A-Z][A-Za-z]+(?:\s+[A-Za-z]+){0,3}(?:\s*\([^)]*\))?:\s*$|^[A-Z][A-Z]+(?:\s+[A-Z]+){0,3}:?\s*$/
 const FLAG_RE = /^\s+(-(\w),\s+)?--([\w-]+)(?:\s+(\S+))?\s{2,}(.*)$/
-const CHILD_RE = /^\s{2,}([A-Za-z0-9][\w-]*)\*?:?\s+(.*)$/
+// Accept a single tab (go indents commands with one tab) or 2+ spaces.
+const CHILD_RE = /^(?:\t|\s{2,})([A-Za-z0-9][\w-]*)\*?:?\s+(.*)$/
 const SKIP_CHILDREN = new Set(['help', 'completion'])
 const MAX_DEPTH = 6
 // Section headers whose body is a list of subcommands. Cobra uses
@@ -19,10 +26,12 @@ const MAX_DEPTH = 6
 // "Deploy Commands", "Other Commands", ...; docker uses "Common Commands",
 // "Management Commands", "Swarm Commands". Match any header mentioning
 // "command(s)" (covers "Subcommands provided by plugins" too) and exclude
-// sections that look command-like but aren't (docker's "Invalid Plugins").
+// sections that look command-like but aren't (docker's "Invalid Plugins",
+// jq's "Command options").
 function isCommandsSection(header: string): boolean {
   const h = header.toLowerCase()
   if (h.includes('invalid plugins')) return false
+  if (h.includes('option') || h.includes('flag')) return false
   return h.includes('command')
 }
 
@@ -309,6 +318,28 @@ function parseChildRest(rest: string): { name: string; short: string } | null {
 }
 
 function parseChildren(block: string[], prefixPath?: string[]): { name: string; short: string }[] {
+  // gcloud (and other man-page-style CLIs) put the name on one indented line
+  // and the description on the next (more-indented) line:
+  //      access-approval
+  //         Manage Access Approval requests and settings.
+  // Try this format FIRST — when it matches, CHILD_RE would pick up the
+  // description lines as false-positive children.
+  {
+    const twoLine: { name: string; short: string }[] = []
+    for (let i = 0; i < block.length; i++) {
+      const nameM = block[i].match(/^\s{2,}([a-z][\w-]*)\s*$/i)
+      if (!nameM) continue
+      const nextM = block[i + 1]?.match(/^\s{4,}(.+)$/)
+      if (nextM) {
+        twoLine.push({ name: nameM[1], short: nextM[1].trim() })
+        i++
+      }
+    }
+    if (twoLine.length >= 2) {
+      return twoLine.filter((c) => !/^[A-Z]{2,}$/.test(c.name))
+    }
+  }
+
   const out: { name: string; short: string }[] = []
   const prefix = prefixPath && prefixPath.length > 0 ? prefixPath.join(' ') : ''
   // yargs prefixes every command line with the binary (and parent path), e.g.
@@ -330,11 +361,26 @@ function parseChildren(block: string[], prefixPath?: string[]): { name: string; 
       if (m) out.push({ name: m[1], short: m[2].trim() })
     }
   }
-  return out
+
+  // npm lists commands as a comma-separated block with no descriptions:
+  //     access, adduser, audit, bugs, cache, ci, completion,
+  //     config, dedupe, deprecate, diff, ...
+  if (out.length === 0 && block.some((l) => /^\s{2,}\w[\w-]*\s*,/.test(l))) {
+    const joined = block.map((l) => l.trim()).filter(Boolean).join(' ')
+    for (const part of joined.split(',')) {
+      const name = part.trim()
+      if (/^[A-Za-z0-9][\w-]*$/.test(name)) out.push({ name, short: '' })
+    }
+  }
+
+  // Drop all-caps header words that CHILD_RE may have captured from lines
+  // like gcloud's "COMMAND is one of the following:" — real command names
+  // are lowercase.
+  return out.filter((c) => !/^[A-Z]{2,}$/.test(c.name))
 }
 
 export function parseHelp(text: string, prefixPath?: string[]): ParsedHelp {
-  const lines = text.replace(/\r\n/g, '\n').split('\n')
+  const lines = stripAnsi(text.replace(/\r\n/g, '\n')).split('\n')
   let headerIdx = lines.findIndex((l) => HEADER_RE.test(l))
   if (headerIdx === -1) headerIdx = lines.length
   let long = lines.slice(0, headerIdx).join('\n').trim()
@@ -394,6 +440,32 @@ export function parseHelp(text: string, prefixPath?: string[]): ParsedHelp {
     for (const line of lines) {
       const m = line.match(CHILD_RE)
       if (m) children.push({ name: m[1], short: m[2].trim() })
+    }
+  }
+
+  // pnpm and similar CLIs group commands under non-standard headers like
+  // "Manage your dependencies:", "Run your scripts:", ... that aren't
+  // recognized as command sections. Only try this when the usage line signals
+  // subcommands ("[command]") so we don't manufacture false children for leaf
+  // CLIs (node, rg, python3) that happen to have indented prose.
+  if (children.length === 0 && /\bcommand\b/i.test(usageLine)) {
+    for (const [header, block] of sections) {
+      const h = header.toLowerCase()
+      if (h === 'flags' || h === 'options' || h.endsWith(' options') || h.endsWith(' flags')) continue
+      if (h === 'usage') continue
+      // Only accept lines indented at the command-entry level, not deeply-
+      // indented continuation lines from multi-line descriptions.
+      const matches = block
+        .map((l) => ({ line: l, indent: /^\s*/.exec(l)?.[0].length ?? 0 }))
+        .filter((m) => m.indent >= 2 && CHILD_RE.test(m.line))
+      if (matches.length < 2) continue
+      const minIndent = Math.min(...matches.map((m) => m.indent))
+      for (const m of matches) {
+        if (m.indent <= minIndent + 4) {
+          const c = m.line.match(CHILD_RE)
+          if (c) children.push({ name: c[1], short: c[2].trim() })
+        }
+      }
     }
   }
 

@@ -504,3 +504,138 @@ describe('parseHelp - git root (no section headers, prose layout)', () => {
     expect(p.long).not.toContain('Clone a repository')
   })
 })
+
+describe('parseHelp - go root (tab-indented commands)', () => {
+  // go indents its command listing with a single tab character. The parser
+  // must accept single-tab indentation (CHILD_RE requires \s{2,} which would
+  // miss a single tab).
+  const p = parseHelp(fx('go-root.txt'))
+
+  it('discovers tab-indented subcommands', () => {
+    const names = p.children.map((c) => c.name)
+    expect(names).toContain('bug')
+    expect(names).toContain('build')
+    expect(names).toContain('test')
+    expect(names).toContain('run')
+    expect(names).toContain('mod')
+    expect(names).toContain('work')
+    expect(names).toContain('version')
+    expect(names).toContain('vet')
+    expect(names.length).toBeGreaterThanOrEqual(18)
+  })
+
+  it('keeps short descriptions', () => {
+    const build = p.children.find((c) => c.name === 'build')!
+    expect(build.short).toBe('compile packages and dependencies')
+    const test = p.children.find((c) => c.name === 'test')!
+    expect(test.short).toBe('test packages')
+  })
+
+  it('does not pick up help topics as children', () => {
+    const names = p.children.map((c) => c.name)
+    expect(names).not.toContain('buildconstraint')
+    expect(names).not.toContain('environment')
+    expect(names).not.toContain('gopath')
+  })
+})
+
+describe('parseHelp - npm root (comma-separated command list)', () => {
+  // npm lists commands as a comma-separated block with no descriptions.
+  const p = parseHelp(fx('npm-root.txt'))
+
+  it('parses the comma-separated command block', () => {
+    const names = p.children.map((c) => c.name)
+    expect(names).toContain('install')
+    expect(names).toContain('test')
+    expect(names).toContain('run-script')
+    expect(names).toContain('audit')
+    expect(names).toContain('publish')
+    expect(names).toContain('uninstall')
+    expect(names.length).toBeGreaterThanOrEqual(60)
+  })
+
+  it('keeps empty descriptions (npm has no per-command descriptions)', () => {
+    const install = p.children.find((c) => c.name === 'install')!
+    expect(install.short).toBe('')
+  })
+})
+
+describe('parseHelp - pnpm root (category headers as command sections)', () => {
+  // pnpm groups commands under non-standard headers like "Manage your
+  // dependencies:" that aren't recognized as command sections. The orphan
+  // fallback finds children when the usage line signals subcommands.
+  const p = parseHelp(fx('pnpm-root.txt'), ['pnpm'])
+
+  it('discovers commands from orphan category sections', () => {
+    const names = p.children.map((c) => c.name)
+    expect(names).toContain('add')
+    expect(names).toContain('audit')
+    expect(names).toContain('create')
+    expect(names).toContain('run')
+    expect(names).toContain('exec')
+    expect(names).toContain('init')
+    expect(names).toContain('publish')
+  })
+
+  it('does not manufacture children from Options section', () => {
+    const names = p.children.map((c) => c.name)
+    expect(names).not.toContain('--recursive')
+    expect(names).not.toContain('recursive')
+  })
+})
+
+describe('parseHelp - jq root (leaf command, no false children)', () => {
+  // jq's "Command options:" section must NOT be treated as a command section
+  // even though it contains the word "command".
+  const p = parseHelp(fx('jq-root.txt'))
+
+  it('has no children (jq is a leaf command)', () => {
+    expect(p.children).toHaveLength(0)
+  })
+
+  it('parses flags from the Command options section', () => {
+    expect(p.flags.length).toBeGreaterThanOrEqual(20)
+    const nullInput = p.flags.find((f) => f.name === 'null-input')
+    expect(nullInput?.type).toBe('bool')
+    expect(nullInput?.shorthand).toBe('n')
+  })
+})
+
+describe('parseHelp - gcloud root (ANSI codes + two-line format)', () => {
+  // gcloud embeds ANSI escape codes and uses a man-page-like layout where
+  // the command name and its description are on separate lines.
+  const p = parseHelp(fx('gcloud-root.txt'), ['gcloud'])
+
+  it('strips ANSI escape codes', () => {
+    // If ANSI weren't stripped, the long or children would contain escape
+    // sequences and sections wouldn't be detected.
+    expect(p.long).not.toContain('\x1b')
+  })
+
+  it('discovers commands from the two-line format', () => {
+    const names = p.children.map((c) => c.name)
+    expect(names).toContain('cheat-sheet')
+    expect(names).toContain('docker')
+    expect(names).toContain('feedback')
+    expect(names).toContain('info')
+    expect(names).toContain('version')
+  })
+
+  it('keeps descriptions from the following line', () => {
+    const info = p.children.find((c) => c.name === 'info')!
+    expect(info.short).toContain('Display information about the current gcloud environment')
+  })
+
+  it('does not produce all-caps false-positive children', () => {
+    const names = p.children.map((c) => c.name)
+    expect(names).not.toContain('COMMAND')
+    expect(names).not.toContain('GROUP')
+    expect(names.every((n) => !/^[A-Z]{2,}$/.test(n))).toBe(true)
+  })
+
+  it('parses global flags', () => {
+    expect(p.globalFlags.length).toBeGreaterThanOrEqual(5)
+    const project = p.globalFlags.find((f) => f.name === 'project')
+    expect(project).toBeDefined()
+  })
+})
