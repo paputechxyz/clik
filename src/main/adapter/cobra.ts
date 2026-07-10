@@ -337,7 +337,7 @@ export function parseHelp(text: string, prefixPath?: string[]): ParsedHelp {
   const lines = text.replace(/\r\n/g, '\n').split('\n')
   let headerIdx = lines.findIndex((l) => HEADER_RE.test(l))
   if (headerIdx === -1) headerIdx = lines.length
-  const long = lines.slice(0, headerIdx).join('\n').trim()
+  let long = lines.slice(0, headerIdx).join('\n').trim()
 
   const sections = new Map<string, string[]>()
   let cur = ''
@@ -356,7 +356,9 @@ export function parseHelp(text: string, prefixPath?: string[]): ParsedHelp {
   // gh stores the usage section as "USAGE" (all-caps header); look it up
   // case-insensitively so both "Usage" and "USAGE" resolve.
   const usageHeader = [...sections.keys()].find((k) => k.toLowerCase() === 'usage')
-  const usageLine = usageHeader ? body(usageHeader).find((l) => l.trim().length > 0) ?? '' : ''
+  const usageLine = usageHeader
+    ? body(usageHeader).find((l) => l.trim().length > 0) ?? ''
+    : lines.find((l) => /^usage:\s/i.test(l)) ?? ''
 
   // Children: cobra groups everything under "Available Commands"; kubectl/docker
   // spread subcommands across multiple "<X> Commands" sections. Walk every
@@ -366,6 +368,32 @@ export function parseHelp(text: string, prefixPath?: string[]): ParsedHelp {
   for (const [header, block] of sections) {
     if (isCommandsSection(header)) {
       children.push(...parseChildren(block, prefixPath))
+    }
+  }
+
+  // No standard section headers were found (e.g. git's plain prose layout).
+  // Fall back to scanning every line for an indented "name  description"
+  // child entry, and trim the long description to the intro text before the
+  // first entry (dropping a leading "usage:" block) so the tree is populated.
+  if (sections.size === 0) {
+    const firstChildIdx = lines.findIndex((l) => CHILD_RE.test(l))
+    if (firstChildIdx !== -1) {
+      const filtered: string[] = []
+      let skippingUsage = false
+      for (const l of lines.slice(0, firstChildIdx)) {
+        if (/^usage:\s/i.test(l)) {
+          skippingUsage = true
+          continue
+        }
+        if (skippingUsage && /^\s+\S/.test(l)) continue
+        skippingUsage = false
+        filtered.push(l)
+      }
+      long = filtered.join('\n').trim()
+    }
+    for (const line of lines) {
+      const m = line.match(CHILD_RE)
+      if (m) children.push({ name: m[1], short: m[2].trim() })
     }
   }
 

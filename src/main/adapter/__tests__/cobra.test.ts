@@ -439,3 +439,68 @@ describe('parseHelp - gh root (colon-suffixed command names)', () => {
     expect(version.type).toBe('bool')
   })
 })
+
+describe('parseHelp - git root (no section headers, prose layout)', () => {
+  // git --help has no standard section headers (no "Usage:", "Flags:",
+  // "Available Commands:"). It's plain prose: lowercase category lines followed
+  // by 3-space-indented "name  description" entries. When no headers are found
+  // at all, the parser falls back to scanning every line for child entries.
+  const p = parseHelp(fx('git-root.txt'))
+
+  it('discovers all subcommands via the headerless fallback', () => {
+    const names = p.children.map((c) => c.name)
+    expect(names).toContain('clone')
+    expect(names).toContain('init')
+    expect(names).toContain('add')
+    expect(names).toContain('commit')
+    expect(names).toContain('log')
+    expect(names).toContain('status')
+    expect(names).toContain('branch')
+    expect(names).toContain('merge')
+    expect(names).toContain('rebase')
+    expect(names).toContain('fetch')
+    expect(names).toContain('pull')
+    expect(names).toContain('push')
+    expect(names).toContain('switch')
+    expect(names).toContain('restore')
+    expect(names).toContain('tag')
+  })
+
+  it('does not pick up prose category lines as children', () => {
+    const names = p.children.map((c) => c.name)
+    // Category headers are un-indented prose — must not become children.
+    expect(names).not.toContain('start')
+    expect(names).not.toContain('work')
+    expect(names).not.toContain('examine')
+    expect(names).not.toContain('grow,')
+    expect(names).not.toContain('collaborate')
+  })
+
+  it('preserves document order across categories', () => {
+    const names = p.children.map((c) => c.name)
+    expect(names.indexOf('clone')).toBeLessThan(names.indexOf('add'))
+    expect(names.indexOf('add')).toBeLessThan(names.indexOf('bisect'))
+    expect(names.indexOf('bisect')).toBeLessThan(names.indexOf('commit'))
+    expect(names.indexOf('commit')).toBeLessThan(names.indexOf('fetch'))
+  })
+
+  it('keeps clean short descriptions', () => {
+    const clone = p.children.find((c) => c.name === 'clone')!
+    expect(clone.short).toBe('Clone a repository into a new directory')
+    const pull = p.children.find((c) => c.name === 'pull')!
+    expect(pull.short).toBe(
+      'Fetch from and integrate with another repository or a local branch'
+    )
+  })
+
+  it('extracts the lowercase usage line', () => {
+    expect(p.usage).toContain('git [-v | --version]')
+    expect(p.usage).toContain('--help')
+  })
+
+  it('trims the long description to the intro (no usage block, no commands)', () => {
+    expect(p.long).toContain('These are common Git commands')
+    expect(p.long).not.toContain('usage: git')
+    expect(p.long).not.toContain('Clone a repository')
+  })
+})
