@@ -229,6 +229,8 @@ interface AppState {
   clearRun: (id: string) => void
   handlePtyEvent: (e: PtyEvent) => void
   saveCurrentCommand: () => void
+  addRawCommand: (command: string) => void
+  injectCommand: (item: SavedCommandItem) => Promise<void>
   removeSaved: (id: string) => void
   clearHistory: () => void
   renameSaved: (id: string, name: string) => void
@@ -545,6 +547,44 @@ export const useAppStore = create<AppState>((set, get) => ({
       persistLibrary(saved, s.history, s.folders)
       return { saved }
     })
+  },
+
+  addRawCommand(command) {
+    const trimmed = command.trim()
+    if (trimmed === '') return
+    const item: SavedCommandItem = {
+      id: uid(),
+      name: trimmed,
+      entryId: '',
+      entryName: '',
+      binaryName: '',
+      selection: [],
+      flags: {},
+      positional: '',
+      preview: trimmed,
+      createdAt: Date.now(),
+      folderId: null,
+      rawCommand: trimmed
+    }
+    set((s) => {
+      const saved = [...s.saved, item]
+      persistLibrary(saved, s.history, s.folders)
+      return { saved }
+    })
+  },
+
+  async injectCommand(item) {
+    const { runs, activeRunId } = get()
+    let target = runs.find((r) => r.id === activeRunId && r.status === 'running')
+    if (!target) target = runs.find((r) => r.status === 'running')
+    if (!target) {
+      await get().openShellTab()
+      target = get().runs[get().runs.length - 1]
+    }
+    if (!target) return
+    const cmd = item.rawCommand ?? item.preview
+    window.clik.pty.input(target.id, cmd)
+    set({ activeRunId: target.id })
   },
 
   removeSaved(id) {

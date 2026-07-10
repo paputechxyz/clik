@@ -639,3 +639,53 @@ describe('parseHelp - gcloud root (ANSI codes + two-line format)', () => {
     expect(project).toBeDefined()
   })
 })
+
+describe('parseHelp - 7zz root (angle-bracket headers, single-dash switches)', () => {
+  // 7zz uses <Commands> and <Switches> angle-bracket headers. Switches use
+  // a single-dash format with " : " separator: "  -y : assume Yes on all
+  // queries", "  -m{Parameters} : set compression Method".
+  const p = parseHelp(fx('7zz-root.txt'), ['7zz'])
+
+  it('discovers commands from <Commands>', () => {
+    const names = p.children.map((c) => c.name)
+    expect(names).toContain('a')
+    expect(names).toContain('x')
+    expect(names).toContain('l')
+    expect(names).toContain('t')
+    expect(names).toContain('rn')
+    expect(names.length).toBe(11)
+  })
+
+  it('parses switches as global single-dash flags', () => {
+    expect(p.globalFlags.length).toBeGreaterThanOrEqual(30)
+    const y = p.globalFlags.find((f) => f.name === 'y')!
+    expect(y.type).toBe('bool')
+    expect(y.singleDash).toBe(true)
+    expect(y.usage).toContain('assume Yes')
+  })
+
+  it('marks value-taking switches as string type', () => {
+    const m = p.globalFlags.find((f) => f.name === 'm')!
+    expect(m.type).toBe('string')
+    expect(m.singleDash).toBe(true)
+    expect(m.usage).toContain('compression Method')
+  })
+
+  it('parses sub-parameters (mmt, mx)', () => {
+    const mmt = p.globalFlags.find((f) => f.name === 'mmt')
+    expect(mmt).toBeDefined()
+    expect(mmt!.type).toBe('string')
+    const mx = p.globalFlags.find((f) => f.name === 'mx')
+    expect(mx).toBeDefined()
+  })
+
+  it('skips the -- stop-switches marker', () => {
+    expect(p.globalFlags.find((f) => f.name === '')).toBeUndefined()
+  })
+
+  it('does not treat switches as children', () => {
+    const names = p.children.map((c) => c.name)
+    expect(names).not.toContain('y')
+    expect(names).not.toContain('m')
+  })
+})

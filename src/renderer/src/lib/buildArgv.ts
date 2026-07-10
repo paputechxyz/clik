@@ -13,6 +13,17 @@ export function buildArgv(input: BuildArgvInput): string[] {
 
   for (const f of flags) {
     const v = values[f.name]
+    if (f.singleDash) {
+      if (f.type === 'bool') {
+        if (v === true) argv.push(`-${f.name}`)
+        continue
+      }
+      if (v === undefined || v === null) continue
+      const s = String(v)
+      if (s === '') continue
+      argv.push(`-${f.name}${s}`)
+      continue
+    }
     if (f.type === 'bool') {
       if (v === true) argv.push(`--${f.name}`)
       continue
@@ -51,20 +62,22 @@ export interface PreviewToken {
  * the first `--flag` are `sub`; `--flags` are `flag`; the value following a
  * flag (and any later non-flag token) is `val`.
  */
+const isFlagToken = (tok: string): boolean => tok.startsWith('--') || /^-[A-Za-z]/.test(tok)
+
 export function commandPreviewTokens(binaryName: string, argv: string[]): PreviewToken[] {
   const fmt = (tok: string): string => (/[\s'"\\]/.test(tok) ? `"${tok.replace(/"/g, '\\"')}"` : tok)
   const tokens: PreviewToken[] = [{ text: binaryName, kind: 'bin' }]
   let i = 0
-  while (i < argv.length && !argv[i].startsWith('--')) {
+  while (i < argv.length && !isFlagToken(argv[i])) {
     tokens.push({ text: fmt(argv[i]), kind: 'sub' })
     i++
   }
   while (i < argv.length) {
     const tok = argv[i]
-    if (tok.startsWith('--')) {
+    if (isFlagToken(tok)) {
       tokens.push({ text: fmt(tok), kind: 'flag' })
       i++
-      if (i < argv.length && !argv[i].startsWith('--')) {
+      if (i < argv.length && !isFlagToken(argv[i])) {
         tokens.push({ text: fmt(argv[i]), kind: 'val' })
         i++
       }

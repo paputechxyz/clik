@@ -40,6 +40,18 @@ describe('buildArgv', () => {
     expect(argv).toEqual(['search', '--top', '3'])
   })
 
+  it('emits -name (single dash) for singleDash bool flags', () => {
+    const flags = [f({ name: 'y', type: 'bool', singleDash: true })]
+    const argv = buildArgv({ commandPath: ['a'], flags, values: { y: true }, positionalArgs: ['archive.zip'] })
+    expect(argv).toEqual(['a', 'archive.zip', '-y'])
+  })
+
+  it('attaches value directly for singleDash string flags (-mhe=on)', () => {
+    const flags = [f({ name: 'm', type: 'string', singleDash: true })]
+    const argv = buildArgv({ commandPath: ['a'], flags, values: { m: 'he=on' }, positionalArgs: ['archive.zip'] })
+    expect(argv).toEqual(['a', 'archive.zip', '-mhe=on'])
+  })
+
   it('serialises a runnable myapp search preview with quoting', () => {
     const argv = buildArgv({
       commandPath: ['search'],

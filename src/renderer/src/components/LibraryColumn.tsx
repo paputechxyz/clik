@@ -7,6 +7,7 @@ import {
   ChevronRightIcon,
   ChevronUpIcon,
   FolderIcon,
+  InjectIcon,
   PencilIcon,
   PlusIcon,
   TrashIcon
@@ -97,6 +98,8 @@ export function LibraryColumn(): JSX.Element {
   const [editing, setEditing] = useState<EditTarget | null>(null)
   const [draft, setDraft] = useState('')
   const [confirmDelete, setConfirmDelete] = useState<ConfirmDelete | null>(null)
+  const [addingRaw, setAddingRaw] = useState(false)
+  const [rawDraft, setRawDraft] = useState('')
 
   const hostRef = useRef<HTMLDivElement>(null)
   const [hostHeight, setHostHeight] = useState(0)
@@ -140,6 +143,8 @@ export function LibraryColumn(): JSX.Element {
   const clearHistory = useAppStore((s) => s.clearHistory)
   const loadCommand = useAppStore((s) => s.loadCommand)
   const addFolder = useAppStore((s) => s.addFolder)
+  const addRawCommand = useAppStore((s) => s.addRawCommand)
+  const injectCommand = useAppStore((s) => s.injectCommand)
   const renameFolder = useAppStore((s) => s.renameFolder)
   const removeFolder = useAppStore((s) => s.removeFolder)
   const renameSaved = useAppStore((s) => s.renameSaved)
@@ -340,10 +345,17 @@ export function LibraryColumn(): JSX.Element {
             <span className="lib-head-actions">
               <button
                 className="icon-btn small"
+                title="Save a raw command"
+                onClick={() => { setAddingRaw(true); setRawDraft('') }}
+              >
+                <PlusIcon />
+              </button>
+              <button
+                className="icon-btn small"
                 title="New folder"
                 onClick={() => addFolder('New Folder')}
               >
-                <PlusIcon />
+                <FolderIcon />
               </button>
               <button
                 className="icon-btn small"
@@ -364,6 +376,20 @@ export function LibraryColumn(): JSX.Element {
               <div className="lib-empty">Saved commands appear here. Use the Save button next to Run.</div>
             ) : (
               <ul className="lib-list" onDragOver={onListDragOver} onDrop={onListDrop}>
+                {addingRaw && (
+                  <li className="lib-item editing">
+                    <RawCommandInput
+                      value={rawDraft}
+                      onChange={setRawDraft}
+                      onCommit={() => {
+                        addRawCommand(rawDraft)
+                        setAddingRaw(false)
+                        setRawDraft('')
+                      }}
+                      onCancel={() => { setAddingRaw(false); setRawDraft('') }}
+                    />
+                  </li>
+                )}
                 {rootItems.map((it) => (
                   <SavedCommandRow
                     key={it.id}
@@ -376,6 +402,7 @@ export function LibraryColumn(): JSX.Element {
                     commitRename={commitRename}
                     cancelRename={cancelRename}
                     onLoad={loadCommand}
+                    onInject={injectCommand}
                     onRemove={removeSaved}
                     {...dnd}
                   />
@@ -394,6 +421,7 @@ export function LibraryColumn(): JSX.Element {
                     commitRename={commitRename}
                     cancelRename={cancelRename}
                     onLoad={loadCommand}
+                    onInject={injectCommand}
                     onRemove={removeSaved}
                     onDelete={onDeleteFolder}
                     {...dnd}
@@ -487,6 +515,7 @@ interface RowSharedProps {
   commitRename: () => void
   cancelRename: () => void
   onLoad: (item: { entryId: string; selection: string[]; flags: Record<string, unknown>; positional: string }) => Promise<void>
+  onInject: (item: SavedCommandItem) => void
   onRemove: (id: string) => void
 }
 
@@ -500,6 +529,7 @@ function SavedCommandRow({
   commitRename,
   cancelRename,
   onLoad,
+  onInject,
   onRemove,
   onCommandDragStart,
   onCommandDragOver,
@@ -532,6 +562,13 @@ function SavedCommandRow({
       </button>
       {!isEditing && (
         <span className="lib-item-tools">
+          <button
+            className="lib-item-x"
+            title="Inject into terminal"
+            onClick={() => onInject(item)}
+          >
+            <InjectIcon />
+          </button>
           <button
             className="lib-item-x"
             title="Rename"
@@ -568,6 +605,7 @@ function FolderGroup({
   commitRename,
   cancelRename,
   onLoad,
+  onInject,
   onRemove,
   onDelete,
   drag,
@@ -636,6 +674,7 @@ function FolderGroup({
               commitRename={commitRename}
               cancelRename={cancelRename}
               onLoad={onLoad}
+              onInject={onInject}
               onRemove={onRemove}
               drag={drag}
               dropHint={dropHint}
@@ -651,6 +690,44 @@ function FolderGroup({
         </ul>
       )}
     </li>
+  )
+}
+
+function RawCommandInput({
+  value,
+  onChange,
+  onCommit,
+  onCancel
+}: {
+  value: string
+  onChange: (v: string) => void
+  onCommit: () => void
+  onCancel: () => void
+}): JSX.Element {
+  const ref = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    ref.current?.focus()
+  }, [])
+  return (
+    <input
+      ref={ref}
+      className="rename-input"
+      type="text"
+      placeholder="Type a command…"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onBlur={() => { if (value.trim() !== '') onCommit(); else onCancel() }}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          onCommit()
+        } else if (e.key === 'Escape') {
+          e.preventDefault()
+          onCancel()
+        }
+      }}
+    />
   )
 }
 

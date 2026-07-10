@@ -15,7 +15,7 @@ function stripAnsi(s: string): string {
 // "FLAGS"). Match both shapes: either a Title-Case line ending in a colon, or
 // an all-uppercase line (colon optional).
 const HEADER_RE =
-  /^[A-Z][A-Za-z]+(?:\s+[A-Za-z]+){0,3}(?:\s*\([^)]*\))?:\s*$|^[A-Z][A-Z]+(?:\s+[A-Z]+){0,3}:?\s*$/
+  /^[A-Z][A-Za-z]+(?:\s+[A-Za-z]+){0,3}(?:\s*\([^)]*\))?:\s*$|^[A-Z][A-Z]+(?:\s+[A-Z]+){0,3}:?\s*$|^<[A-Z][A-Za-z]+>\s*$/
 const FLAG_RE = /^\s+(-(\w),\s+)?--([\w-]+)(?:\s+(\S+))?\s{2,}(.*)$/
 // Accept a single tab (go indents commands with one tab) or 2+ spaces.
 const CHILD_RE = /^(?:\t|\s{2,})([A-Za-z0-9][\w-]*)\*?:?\s+(.*)$/
@@ -292,7 +292,33 @@ function parseGetoptFlags(block: string[]): Flag[] {
   return out
 }
 
+// 7zz (7-Zip) uses single-dash flags with a " : " separator, e.g.
+//     -y : assume Yes on all queries
+//     -m{Parameters} : set compression Method
+//     -o{Directory} : set Output directory
+// Values are attached directly: -mhe=on, -o/tmp, -mx9.
+const SHORT_FLAG_RE = /^\s+-([A-Za-z][\w-]*)(.*?)\s+:\s+(.+)$/
+
+function looksLikeShortFlags(block: string[]): boolean {
+  return block.filter((l) => SHORT_FLAG_RE.test(l)).length >= 3
+}
+
+function parseShortFlags(block: string[]): Flag[] {
+  const out: Flag[] = []
+  for (const line of block) {
+    const m = line.match(SHORT_FLAG_RE)
+    if (!m) continue
+    const name = m[1]
+    const paramSpec = m[2]
+    const usage = m[3].trim()
+    const isBool = paramSpec === '' || paramSpec === '[-]'
+    out.push({ name, type: isBool ? 'bool' : 'string', usage, singleDash: true })
+  }
+  return out
+}
+
 function parseFlagsAuto(block: string[]): Flag[] {
+  if (looksLikeShortFlags(block)) return parseShortFlags(block)
   if (looksLikeYargsFlags(block)) return parseYargsFlags(block)
   if (looksLikeKubectlFlags(block)) return parseKubectlFlags(block)
   if (looksLikeGetoptFlags(block)) return parseGetoptFlags(block)
@@ -480,9 +506,9 @@ export function parseHelp(text: string, prefixPath?: string[]): ParsedHelp {
   const globalFlagBlocks: string[] = []
   for (const header of sections.keys()) {
     const h = header.toLowerCase()
-    const isFlagSection = h === 'flags' || h === 'options' || h.endsWith(' options') || h.endsWith(' flags')
+    const isFlagSection = h === 'flags' || h === 'options' || h.endsWith(' options') || h.endsWith(' flags') || h.includes('switch')
     if (!isFlagSection) continue
-    if (h.includes('global')) globalFlagBlocks.push(...body(header))
+    if (h.includes('global') || h.includes('switch')) globalFlagBlocks.push(...body(header))
     else flagBlocks.push(...body(header))
   }
   return {
@@ -572,7 +598,7 @@ async function buildNode(
     ((rootHelp !== undefined && help === rootHelp) ||
       (parentHelp !== undefined && help === parentHelp))
   if (isReprint) {
-    return { name, path: cmdPath, use: '', short, long: '', isGroup: false, flags: [], inheritedFlags: [], children: [] }
+    return { name, path: cmdPath, use: '', short, long: '', isGroup: false, flags: [], inheritedFlags: parsed.globalFlags, children: [] }
   }
 
   const children: CommandNode[] = []

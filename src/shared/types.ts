@@ -7,6 +7,7 @@ export interface Flag {
   usage: string
   default?: boolean | number | string | string[]
   rawDefault?: string
+  singleDash?: boolean
 }
 
 export interface CommandNode {
@@ -116,6 +117,9 @@ export interface SavedCommandItem {
   // Single-level folder grouping: null = root. Older data without this field
   // is migrated to null on load (see src/main/library.ts).
   folderId?: string | null
+  // Arbitrary command string (not tied to a CLI entry). When set, inject uses
+  // this verbatim; loadCommand is a no-op (no entry to restore).
+  rawCommand?: string
 }
 
 export interface Folder {

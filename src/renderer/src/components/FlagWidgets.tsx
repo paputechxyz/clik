@@ -24,8 +24,8 @@ export function FlagField({ flag, value, onChange }: WidgetProps): JSX.Element {
 function Label({ flag }: { flag: Flag }): JSX.Element {
   return (
     <label className="flag-label" title={flag.usage}>
-      <span className="flag-name">--{flag.name}</span>
-      {flag.shorthand && <span className="flag-short">-{flag.shorthand}</span>}
+      <span className="flag-name">{flag.singleDash ? '-' : '--'}{flag.name}</span>
+      {!flag.singleDash && flag.shorthand && <span className="flag-short">-{flag.shorthand}</span>}
       <span className="flag-type">{flag.type}</span>
     </label>
   )
