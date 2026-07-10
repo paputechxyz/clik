@@ -3,9 +3,15 @@ import path from 'node:path'
 import type { CommandNode, CommandTree, Flag, FlagType } from '../../shared/types'
 import type { CliAdapter } from './types'
 
-const HEADER_RE = /^([A-Z][A-Za-z]+(?:\s+[A-Za-z]+){0,3}(?:\s*\([^)]*\))?):\s*$/
+// Cobra/kubectl/docker print section headers in Title Case WITH a trailing
+// colon ("Usage:", "Available Commands:", "Basic Commands (Beginner):"). The
+// gh CLI prints them in ALL UPPERCASE with NO colon ("USAGE", "CORE COMMANDS",
+// "FLAGS"). Match both shapes: either a Title-Case line ending in a colon, or
+// an all-uppercase line (colon optional).
+const HEADER_RE =
+  /^[A-Z][A-Za-z]+(?:\s+[A-Za-z]+){0,3}(?:\s*\([^)]*\))?:\s*$|^[A-Z][A-Z]+(?:\s+[A-Z]+){0,3}:?\s*$/
 const FLAG_RE = /^\s+(-(\w),\s+)?--([\w-]+)(?:\s+(\S+))?\s{2,}(.*)$/
-const CHILD_RE = /^\s{2,}([A-Za-z0-9][\w-]*)\*?\s+(.*)$/
+const CHILD_RE = /^\s{2,}([A-Za-z0-9][\w-]*)\*?:?\s+(.*)$/
 const SKIP_CHILDREN = new Set(['help', 'completion'])
 const MAX_DEPTH = 6
 // Section headers whose body is a list of subcommands. Cobra uses
@@ -294,7 +300,7 @@ function escapeRe(s: string): string {
 // that yargs prints between the command name and its description, and trailing
 // hint tags like "[aliases: ls]" / "[default]".
 function parseChildRest(rest: string): { name: string; short: string } | null {
-  const m = rest.match(/^([A-Za-z0-9][\w-]*)\*?\s+(.*)$/)
+  const m = rest.match(/^([A-Za-z0-9][\w-]*)\*?:?\s+(.*)$/)
   if (!m) return null
   let short = m[2].trim()
   short = short.replace(/^(?:<[^>]+>|\[[^\]]+\])\s{2,}/, '').trim()
@@ -347,7 +353,10 @@ export function parseHelp(text: string, prefixPath?: string[]): ParsedHelp {
   }
 
   const body = (h: string): string[] => sections.get(h) ?? []
-  const usageLine = body('Usage').find((l) => l.trim().length > 0) ?? ''
+  // gh stores the usage section as "USAGE" (all-caps header); look it up
+  // case-insensitively so both "Usage" and "USAGE" resolve.
+  const usageHeader = [...sections.keys()].find((k) => k.toLowerCase() === 'usage')
+  const usageLine = usageHeader ? body(usageHeader).find((l) => l.trim().length > 0) ?? '' : ''
 
   // Children: cobra groups everything under "Available Commands"; kubectl/docker
   // spread subcommands across multiple "<X> Commands" sections. Walk every

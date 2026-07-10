@@ -374,3 +374,68 @@ describe('parseHelp - psql root (GNU/getopt)', () => {
     }
   })
 })
+
+describe('parseHelp - gh root (colon-suffixed command names)', () => {
+  // gh prints every subcommand name with a trailing colon, e.g.
+  // "  auth:          Authenticate gh and git with GitHub". The parser must
+  // strip the colon so the child is named "auth", not dropped entirely.
+  const p = parseHelp(fx('gh-root.txt'))
+
+  it('strips the trailing colon from command names', () => {
+    const names = p.children.map((c) => c.name)
+    expect(names).toContain('auth')
+    expect(names).toContain('browse')
+    expect(names).toContain('codespace')
+    expect(names).toContain('issue')
+    expect(names).toContain('pr')
+    expect(names).toContain('repo')
+    // every child name is clean — no colon suffix
+    expect(names.every((n) => !n.endsWith(':'))).toBe(true)
+  })
+
+  it('gathers children across multiple command sections in order', () => {
+    const names = p.children.map((c) => c.name)
+    // CORE COMMANDS
+    expect(names).toContain('org')
+    expect(names).toContain('release')
+    // GITHUB ACTIONS COMMANDS
+    expect(names).toContain('cache')
+    expect(names).toContain('workflow')
+    // ALIAS COMMANDS
+    expect(names).toContain('co')
+    // ADDITIONAL COMMANDS
+    expect(names).toContain('api')
+    expect(names).toContain('config')
+    expect(names).toContain('ssh-key')
+    // Document order is preserved across sections.
+    expect(names.indexOf('auth')).toBeLessThan(names.indexOf('cache'))
+    expect(names.indexOf('cache')).toBeLessThan(names.indexOf('co'))
+    expect(names.indexOf('co')).toBeLessThan(names.indexOf('api'))
+  })
+
+  it('keeps clean short descriptions', () => {
+    const auth = p.children.find((c) => c.name === 'auth')!
+    expect(auth.short).toBe('Authenticate gh and git with GitHub')
+    const co = p.children.find((c) => c.name === 'co')!
+    expect(co.short).toBe('Alias for "pr checkout"')
+  })
+
+  it('does not treat "HELP TOPICS" as command children', () => {
+    const names = p.children.map((c) => c.name)
+    expect(names).not.toContain('accessibility')
+    expect(names).not.toContain('reference')
+    expect(names).not.toContain('telemetry')
+  })
+
+  it('keeps the usage line and long description', () => {
+    expect(p.usage).toBe('gh <command> <subcommand> [flags]')
+    expect(p.long).toBe('Work seamlessly with GitHub from the command line.')
+  })
+
+  it('parses the root flags', () => {
+    const help = p.flags.find((f) => f.name === 'help')!
+    expect(help.type).toBe('bool')
+    const version = p.flags.find((f) => f.name === 'version')!
+    expect(version.type).toBe('bool')
+  })
+})
