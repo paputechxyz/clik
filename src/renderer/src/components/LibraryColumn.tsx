@@ -441,7 +441,7 @@ export function LibraryColumn(): JSX.Element {
         />
       )}
 
-      <div className={`lib-panel${historyCollapsed ? ' collapsed' : ''}`} style={{ flex: historyCollapsed ? '0 0 26px' : `${historyWeight} 1 0`, minHeight: historyCollapsed ? 0 : 80 }}>
+      <div className={`lib-panel${historyCollapsed ? ' collapsed' : ''}`} style={{ flex: historyCollapsed ? '0 0 26px' : `${historyWeight} 1 0`, minHeight: historyCollapsed ? 0 : 76 }}>
         <div className="lib-head">
           <button
             className="lib-head-toggle"
