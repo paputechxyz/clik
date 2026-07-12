@@ -7,17 +7,29 @@
 - `npm test` — `vitest run` adapter/unit tests (run before considering work done)
 - `npm run build` — build main/preload/renderer to `out/`
 - `npm run rebuild` — rebuild native modules (`node-pty`) against the installed
-  Electron ABI; also runs on `postinstall`
+  Electron ABI. `postinstall` runs this *and* downloads the Electron binary
+  first (see Native modules).
 - `npm run build:mac` — produce a macOS app dir under `dist/`
 
 ## Native modules
 
 `node-pty` is a C++ native module. It must be rebuilt against Electron's ABI
 (`npm run rebuild`, or `postinstall` does it automatically) and is unpacked
-from the asar at package time (`build.asarUnpack` in package.json). If you bump
-Electron, rerun `npm run rebuild`. If the packaged app fails to load
-`node-pty`, check `app.asar.unpacked/node_modules/node-pty/build/Release/` is
-present and that the arch matches.
+from the asar at package time (`build.asarUnpack` in package.json).
+
+**Electron >= 42 dropped its own `postinstall: node install.js`**, so the
+Electron binary (`dist/` + `path.txt`) is no longer auto-downloaded by
+`npm install`. Our `postinstall` compensates by running
+`node node_modules/electron/install.js` *before* `electron-rebuild`. Without
+this step `npm run dev` aborts with `Error: Electron uninstall` from
+electron-vite's `getElectronPath`. After bumping Electron, a plain
+`npm install` is sufficient (postinstall re-downloads the binary and rebuilds
+node-pty); a standalone `npm run rebuild` recompiles node-pty but does **not**
+re-download the Electron binary.
+
+If the packaged app fails to load `node-pty`, check
+`app.asar.unpacked/node_modules/node-pty/build/Release/` is present and that
+the arch matches.
 
 ## Conventions
 
@@ -45,7 +57,9 @@ CLIk also builds and runs on Windows x64. The platform-specific behavior:
   built by `.github/workflows/release-windows.yml` on a `windows-latest`
   runner, triggered by the `v*` tag that `npm run release` pushes. `postinstall`
   (`electron-rebuild`) compiles node-pty for the Windows Electron ABI on that
-  runner. node-pty uses ConPTY on Windows 10 1809+ / Windows 11.
+  runner. node-pty uses ConPTY on Windows 10 1809+ / Windows 11. (The
+  `postinstall` also runs `node node_modules/electron/install.js` first to
+  fetch the Windows Electron binary — see Native modules.)
 - **Shell environment.** Windows GUI apps inherit a full environment from the
   registry (no macOS launchd minimal-env problem), so `ShellEnvCache.refresh()`
   short-circuits to `process.env` on win32 — no login-shell capture. The posix
