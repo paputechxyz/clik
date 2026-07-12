@@ -1,0 +1,24 @@
+name: Obfuscation Scan
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: detect encoded payloads
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Gather PR diff
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr diff "$PR_NUMBER" > obfuscation-diff.txt
+      - name: Scan diff for encoded payloads
+        run: node .github/scripts/obfuscation-scan.mjs obfuscation-diff.txt
