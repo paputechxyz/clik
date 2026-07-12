@@ -105,9 +105,11 @@ for (const line of diff.split('\n')) {
         })
         continue
       }
+      // Decoded to benign, printable text — not suspicious. Move on.
+      continue
     }
 
-    // Secondary: high-entropy blob with no benign decode — worth a review.
+    // Secondary: high-entropy blob that does not decode — worth a review.
     if (!HASH_HEX.test(tok) && shannon(tok) >= 4.5) {
       findings.push({
         file: currentFile,
