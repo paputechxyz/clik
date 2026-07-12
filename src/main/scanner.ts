@@ -39,8 +39,10 @@ export const DEFAULT_CANDIDATES: string[] = Array.from(
 )
 
 // Fallback PATHEXT order when the env var is absent (rare). Windows identifies
-// executables by extension; there is no Unix exec bit.
-const WIN_EXTS = ['.EXE', '.CMD', '.BAT']
+// executables by extension; there is no Unix exec bit. Lowercase is
+// conventional and keeps comparisons portable across case-sensitive CI runners
+// (real Windows matches case-insensitively regardless).
+const WIN_EXTS = ['.exe', '.cmd', '.bat']
 
 function isWindows(): boolean {
   return process.platform === 'win32'
@@ -70,13 +72,20 @@ function winExts(env: Record<string, string>): string[] {
     .filter((e) => e !== '')
 }
 
+// Case-insensitive extension check: Windows PATHEXT is conventionally
+// uppercase (`.EXE`) while filenames are often lowercase (`gh.exe`), and
+// Windows resolves them case-insensitively. Compare lowercased so PATHEXT
+// case never affects the result.
+function hasWinExt(name: string, env: Record<string, string>): boolean {
+  const lower = name.toLowerCase()
+  return winExts(env).some((e) => lower.endsWith(e.toLowerCase()))
+}
+
 // Resolve a bare name in a single PATH dir, probing PATHEXT on Windows.
 function resolveInDir(dir: string, name: string, env: Record<string, string>): string | null {
   if (isWindows()) {
     // If the name already carries an executable extension, try it verbatim.
-    const upper = name.toUpperCase()
-    const hasExt = winExts(env).some((e) => upper.endsWith(e))
-    if (hasExt) {
+    if (hasWinExt(name, env)) {
       const full = path.join(dir, name)
       if (fileExists(full)) return full
       return null
@@ -103,9 +112,9 @@ export function resolveOnPath(name: string, env: Record<string, string>): string
 
   if (trimmed.includes(path.sep) || trimmed.includes('/')) {
     if (isWindows()) {
-      const upper = trimmed.toUpperCase()
-      const hasExt = winExts(env).some((e) => upper.endsWith(e))
-      if (hasExt) return fileExists(trimmed) ? path.resolve(trimmed) : null
+      if (hasWinExt(trimmed, env)) {
+        return fileExists(trimmed) ? path.resolve(trimmed) : null
+      }
       // No extension on a direct path: probe PATHEXT.
       for (const ext of winExts(env)) {
         const p = `${trimmed}${ext}`

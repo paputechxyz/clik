@@ -41,18 +41,18 @@ describe('resolveOnPath (win32 PATHEXT probing)', () => {
 
   const ENV = (extra: Record<string, string> = {}): Record<string, string> => ({
     PATH: dir,
-    PATHEXT: '.COM;.EXE;.BAT;.CMD',
+    PATHEXT: '.com;.exe;.bat;.cmd',
     ...extra
   })
 
   it('resolves a bare name by appending .exe', () => {
     writeFileSync(path.join(dir, 'gh.exe'), '')
-    expect(resolveOnPath('gh', ENV())?.toLowerCase()).toBe(path.join(dir, 'gh.exe').toLowerCase())
+    expect(resolveOnPath('gh', ENV())).toBe(path.join(dir, 'gh.exe'))
   })
 
   it('falls back to .cmd when .exe is absent, respecting PATHEXT order', () => {
     writeFileSync(path.join(dir, 'npm.cmd'), '')
-    expect(resolveOnPath('npm', ENV())?.toLowerCase()).toBe(path.join(dir, 'npm.cmd').toLowerCase())
+    expect(resolveOnPath('npm', ENV())).toBe(path.join(dir, 'npm.cmd'))
   })
 
   it('returns null when no extension matches', () => {
@@ -67,14 +67,19 @@ describe('resolveOnPath (win32 PATHEXT probing)', () => {
 
   it('probes PATHEXT for a direct path without an extension', () => {
     writeFileSync(path.join(dir, 'shim.bat'), '')
-    expect(resolveOnPath(path.join(dir, 'shim'), ENV())?.toLowerCase()).toBe(
-      path.join(dir, 'shim.bat').toLowerCase()
-    )
+    expect(resolveOnPath(path.join(dir, 'shim'), ENV())).toBe(path.join(dir, 'shim.bat'))
   })
 
   it('uses a hardcoded fallback when PATHEXT is unset', () => {
     writeFileSync(path.join(dir, 'x.exe'), '')
-    expect(resolveOnPath('x', { PATH: dir })?.toLowerCase()).toBe(path.join(dir, 'x.exe').toLowerCase())
+    expect(resolveOnPath('x', { PATH: dir })).toBe(path.join(dir, 'x.exe'))
+  })
+
+  it('matches an executable extension case-insensitively on a direct path', () => {
+    const full = path.join(dir, 'mixed.CMD')
+    writeFileSync(full, '')
+    // Uppercase extension in the name against lowercase PATHEXT must still match.
+    expect(resolveOnPath(full, ENV())).toBe(path.resolve(full))
   })
 })
 
