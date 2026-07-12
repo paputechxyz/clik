@@ -65,6 +65,25 @@
       "category": "public.app-category.developer-tools",
       "icon": "build/icon.icns"
     },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "CLIk"
+    },
     "afterPack": "scripts/after-pack.js",
     "asarUnpack": [
       "**/node_modules/node-pty/**"

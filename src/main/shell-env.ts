@@ -8,7 +8,12 @@ export interface CaptureOptions {
   timeoutMs?: number
 }
 
+export function isWindows(): boolean {
+  return process.platform === 'win32'
+}
+
 export function defaultShell(): string {
+  if (isWindows()) return process.env.COMSPEC || 'cmd.exe'
   return process.env.SHELL || '/bin/zsh'
 }
 
@@ -72,6 +77,15 @@ export class ShellEnvCache {
   refresh(shell?: string): Promise<Record<string, string>> {
     if (shell) this.shell = shell
     if (this.inflight) return this.inflight
+    // Windows GUI apps inherit a full user+system environment from the registry
+    // (no macOS launchd minimal-env problem), so there is no login shell to
+    // source. Use process.env directly and skip the posix spawn entirely.
+    if (isWindows()) {
+      this.current = { ...(process.env as Record<string, string>) }
+      this.error = null
+      this.ready = true
+      return Promise.resolve(this.current)
+    }
     this.inflight = captureShellEnv({ shell: this.shell })
       .then((env) => {
         this.current = env

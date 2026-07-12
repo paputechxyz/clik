@@ -7,8 +7,9 @@ export function buildMenu(getWin: () => BrowserWindow | null): void {
     getWin()?.webContents.send('menu:action', action)
   }
 
+  const isMac = process.platform === 'darwin'
   const template: MenuItemConstructorOptions[] = [
-    { role: 'appMenu' },
+    ...(isMac ? [{ role: 'appMenu' as const }] : []),
     { role: 'editMenu' },
     {
       label: 'Shell',
@@ -31,10 +32,19 @@ export function buildMenu(getWin: () => BrowserWindow | null): void {
       ]
     },
     { role: 'viewMenu' },
-    {
-      label: 'Window',
-      submenu: [{ role: 'minimize' }, { role: 'zoom' }, { type: 'separator' }, { role: 'front' }]
-    }
+    ...(isMac
+      ? [
+          {
+            label: 'Window',
+            submenu: [
+              { role: 'minimize' as const },
+              { role: 'zoom' as const },
+              { type: 'separator' as const },
+              { role: 'front' as const }
+            ]
+          }
+        ]
+      : [])
   ]
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))

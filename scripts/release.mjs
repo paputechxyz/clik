@@ -102,3 +102,9 @@ run('electron-builder --mac --arm64 --publish always')
 run(`gh release edit ${tag} --draft=false`)
 
 console.log(`\nDone. ${tag} published to GitHub Releases.`)
+console.log(
+  `\nNote: the Windows x64 installer is built by the release-windows.yml ` +
+    `workflow (triggered by this tag) and attaches to the same release within ` +
+    `~10 minutes. macOS users can download now; Windows users should refresh ` +
+    `the release page shortly.`
+)

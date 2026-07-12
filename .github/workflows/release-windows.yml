@@ -1,0 +1,41 @@
+name: Release (Windows)
+
+# Builds the Windows x64 NSIS installer on a Windows runner and attaches it
+# (plus latest.yml for auto-update) to the GitHub release for the tag.
+#
+# Why CI and not local: node-pty is a C++ native module and cannot be
+# cross-compiled from macOS to Windows (electron-builder emits a broken
+# binary). The version tag is pushed by `npm run release` on macOS; this
+# workflow fires automatically and publishes to the same tag-keyed release.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build & publish Windows x64
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      # postinstall runs electron-rebuild, which compiles node-pty for the
+      # Windows Electron ABI natively on this runner.
+      - run: npm ci
+
+      - name: Build main/preload/renderer
+        run: npm run build
+
+      - name: Package & publish Windows installer
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --win --x64 --publish always

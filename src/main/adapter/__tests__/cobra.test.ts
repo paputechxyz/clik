@@ -1,8 +1,8 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
-import { parseHelp } from '../cobra'
+import { parseHelp, buildHelpArgs } from '../cobra'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const fx = (name: string): string => readFileSync(path.join(here, 'fixtures', name), 'utf8')
@@ -687,5 +687,38 @@ describe('parseHelp - 7zz root (angle-bracket headers, single-dash switches)', (
     const names = p.children.map((c) => c.name)
     expect(names).not.toContain('y')
     expect(names).not.toContain('m')
+  })
+})
+
+describe('buildHelpArgs (platform routing)', () => {
+  const realPlatform = process.platform
+  const realComSpec = process.env.ComSpec
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true })
+    if (realComSpec === undefined) delete process.env.ComSpec
+    else process.env.ComSpec = realComSpec
+  })
+
+  it('routes a .cmd shim through cmd.exe /c on win32', () => {
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
+    delete process.env.ComSpec
+    const { file, args } = buildHelpArgs('C:\\tools\\npm.cmd', ['run'])
+    expect(file).toBe('cmd.exe')
+    expect(args).toEqual(['/c', 'C:\\tools\\npm.cmd', 'run', '--help'])
+  })
+
+  it('spawns an .exe directly on win32', () => {
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
+    const { file, args } = buildHelpArgs('C:\\Program Files\\gh\\gh.exe', [])
+    expect(file).toBe('C:\\Program Files\\gh\\gh.exe')
+    expect(args).toEqual(['--help'])
+  })
+
+  it('keeps the posix direct-spawn path unchanged', () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
+    const { file, args } = buildHelpArgs('/usr/local/bin/gh', ['repo', 'view'])
+    expect(file).toBe('/usr/local/bin/gh')
+    expect(args).toEqual(['repo', 'view', '--help'])
   })
 })

@@ -15,20 +15,28 @@ commands into folders, and run them in real, interactive terminal tabs
 
 ## Download
 
-**➡️ [Download the latest release for macOS (Apple Silicon)](https://github.com/paputechxyz/clik/releases/latest)**
+**➡️ [Download the latest release](https://github.com/paputechxyz/clik/releases/latest)**
 
-Grab the `CLIk-<version>-arm64.dmg` from the latest release, open it, and drag
-**CLIk** to your Applications folder.
+Two builds are published with every release:
 
-> **Unsigned build — one-time bypass.** CLIk is not code-signed or notarized,
-> so macOS Gatekeeper will block the first launch ("cannot be opened because
-> the developer cannot be verified", or a misleading "is damaged"). Clear it
-> once with either:
+- **macOS (Apple Silicon)** — grab the `CLIk-<version>-arm64.dmg`, open it,
+  and drag **CLIk** to your Applications folder.
+- **Windows (x64)** — grab the `CLIk-<version>-setup.exe` installer and run it.
+
+> **macOS — unsigned build, one-time bypass.** CLIk is not code-signed or
+> notarized, so macOS Gatekeeper will block the first launch ("cannot be
+> opened because the developer cannot be verified", or a misleading "is
+> damaged"). Clear it once with either:
 >
 > - **Right-click** CLIk → **Open** → **Open** on the prompt; or
 > - in Terminal: `xattr -cr /Applications/CLIk.app`
 >
 > After that, the app and its in-app updates open normally.
+
+> **Windows — unsigned build, one-time SmartScreen bypass.** CLIk is not
+> code-signed, so Windows SmartScreen may show "Windows protected your PC" on
+> first launch. Click **More info** → **Run anyway**. Subsequent launches and
+> in-app updates run without the prompt.
 
 In-app updates: open **Settings** (the gear icon) to see your version and
 click **Check Updates** — newer versions download in the background and apply
