@@ -85,3 +85,11 @@ use `child_process.spawn` with `shell: false`.
 `node-pty` is a C++ native module — `npm run rebuild` rebuilds it against the
 installed Electron (also runs on `postinstall`), and it is unpacked from the
 asar at package time (`build.asarUnpack` in `package.json`).
+
+## Security
+
+PRs run a layered, all-free security pipeline: CI tests, CodeQL, secret scanning
+with push protection, dependency review, an obfuscation/encoded-payload
+detector, and advisory AI review via CodeRabbit. Contributors: see
+[`docs/security/maintainer-runbook.md`](docs/security/maintainer-runbook.md) for
+how review and merges work.

