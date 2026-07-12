@@ -33,6 +33,8 @@ Two builds are published with every release:
 >
 > After that, the app and its in-app updates open normally.
 
+<!-- -->
+
 > **Windows — unsigned build, one-time SmartScreen bypass.** CLIk is not
 > code-signed, so Windows SmartScreen may show "Windows protected your PC" on
 > first launch. Click **More info** → **Run anyway**. Subsequent launches and

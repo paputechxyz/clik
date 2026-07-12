@@ -68,7 +68,12 @@ export function captureShellEnv(opts: CaptureOptions = {}): Promise<Record<strin
 }
 
 export class ShellEnvCache {
-  current: Record<string, string> = { ...(process.env as Record<string, string>) }
+  // On Windows, process.env is case-insensitive (Path === PATH). Spreading it
+  // into a plain object loses that, so a Windows env stored as `Path` would
+  // make env.PATH lookups in scanner.ts fail. Keep the live reference on
+  // win32; posix uses the captured shell env (a plain object) after refresh.
+  current: Record<string, string> =
+    isWindows() ? (process.env as Record<string, string>) : { ...(process.env as Record<string, string>) }
   shell: string = defaultShell()
   error: string | null = null
   ready = false
@@ -81,7 +86,7 @@ export class ShellEnvCache {
     // (no macOS launchd minimal-env problem), so there is no login shell to
     // source. Use process.env directly and skip the posix spawn entirely.
     if (isWindows()) {
-      this.current = { ...(process.env as Record<string, string>) }
+      this.current = process.env as Record<string, string>
       this.error = null
       this.ready = true
       return Promise.resolve(this.current)

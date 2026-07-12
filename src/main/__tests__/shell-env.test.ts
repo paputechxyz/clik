@@ -39,8 +39,11 @@ describe('captureShellEnv (live)', () => {
 
 describe('Windows env model', () => {
   const realPlatform = process.platform
+  const realComSpec = process.env.COMSPEC
   afterEach(() => {
     Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true })
+    if (realComSpec === undefined) delete process.env.COMSPEC
+    else process.env.COMSPEC = realComSpec
   })
 
   it('defaultShell() returns cmd.exe on win32', () => {
