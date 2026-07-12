@@ -111,14 +111,22 @@ export function registerIpc(getWin: () => BrowserWindow | null): IpcCleanup {
   })
 
   ipcMain.handle('pty:open', (_e, req: PtyOpenRequest) => ptys.open(req))
-  ipcMain.handle('pty:openShell', () =>
-    ptys.open({
+  ipcMain.handle('pty:openShell', () => {
+    if (process.platform === 'win32') {
+      return ptys.open({
+        file: process.env.COMSPEC || 'cmd.exe',
+        args: [],
+        cwd: os.homedir(),
+        env: {}
+      })
+    }
+    return ptys.open({
       file: shellEnv.shell || process.env.SHELL || '/bin/zsh',
       args: ['-l'],
       cwd: os.homedir(),
       env: {}
     })
-  )
+  })
   ipcMain.on('pty:input', (_e, id: string, data: string) => {
     ptys.input(id, data)
   })

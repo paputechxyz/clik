@@ -38,9 +38,72 @@ export const DEFAULT_CANDIDATES: string[] = Array.from(
   ])
 )
 
+// Fallback PATHEXT order when the env var is absent (rare). Windows identifies
+// executables by extension; there is no Unix exec bit. Lowercase is
+// conventional and keeps comparisons portable across case-sensitive CI runners
+// (real Windows matches case-insensitively regardless).
+const WIN_EXTS = ['.exe', '.cmd', '.bat']
+
+function isWindows(): boolean {
+  return process.platform === 'win32'
+}
+
 export interface ResolvedCommand {
   name: string
   path: string
+}
+
+// On Windows, check that a file exists (NTFS carries no meaningful exec bit;
+// Node's X_OK maps to read access there, not executability).
+function fileExists(p: string): boolean {
+  try {
+    return fs.statSync(p).isFile()
+  } catch {
+    return false
+  }
+}
+
+function winExts(env: Record<string, string>): string[] {
+  const raw = env.PATHEXT
+  if (!raw) return WIN_EXTS
+  return raw
+    .split(';')
+    .map((e) => e.trim())
+    .filter((e) => e !== '')
+}
+
+// Case-insensitive extension check: Windows PATHEXT is conventionally
+// uppercase (`.EXE`) while filenames are often lowercase (`gh.exe`), and
+// Windows resolves them case-insensitively. Compare lowercased so PATHEXT
+// case never affects the result.
+function hasWinExt(name: string, env: Record<string, string>): boolean {
+  const lower = name.toLowerCase()
+  return winExts(env).some((e) => lower.endsWith(e.toLowerCase()))
+}
+
+// Resolve a bare name in a single PATH dir, probing PATHEXT on Windows.
+function resolveInDir(dir: string, name: string, env: Record<string, string>): string | null {
+  if (isWindows()) {
+    // If the name already carries an executable extension, try it verbatim.
+    if (hasWinExt(name, env)) {
+      const full = path.join(dir, name)
+      if (fileExists(full)) return full
+      return null
+    }
+    for (const ext of winExts(env)) {
+      const full = path.join(dir, `${name}${ext}`)
+      if (fileExists(full)) return full
+    }
+    return null
+  }
+  const full = path.join(dir, name)
+  try {
+    const st = fs.statSync(full)
+    if (st.isFile() && (st.mode & 0o111) !== 0) return full
+  } catch {
+    // not present in this dir, keep scanning
+  }
+  return null
 }
 
 export function resolveOnPath(name: string, env: Record<string, string>): string | null {
@@ -48,6 +111,17 @@ export function resolveOnPath(name: string, env: Record<string, string>): string
   if (trimmed === '') return null
 
   if (trimmed.includes(path.sep) || trimmed.includes('/')) {
+    if (isWindows()) {
+      if (hasWinExt(trimmed, env)) {
+        return fileExists(trimmed) ? path.resolve(trimmed) : null
+      }
+      // No extension on a direct path: probe PATHEXT.
+      for (const ext of winExts(env)) {
+        const p = `${trimmed}${ext}`
+        if (fileExists(p)) return path.resolve(p)
+      }
+      return null
+    }
     try {
       fs.accessSync(trimmed, fs.constants.X_OK)
       return path.resolve(trimmed)
@@ -60,13 +134,8 @@ export function resolveOnPath(name: string, env: Record<string, string>): string
   if (!pathVar) return null
   for (const dir of pathVar.split(path.delimiter)) {
     if (dir === '') continue
-    const full = path.join(dir, trimmed)
-    try {
-      const st = fs.statSync(full)
-      if (st.isFile() && (st.mode & 0o111) !== 0) return full
-    } catch {
-      // not present in this dir, keep scanning
-    }
+    const found = resolveInDir(dir, trimmed, env)
+    if (found) return found
   }
   return null
 }

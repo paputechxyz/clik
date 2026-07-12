@@ -522,9 +522,29 @@ export function parseHelp(text: string, prefixPath?: string[]): ParsedHelp {
 
 const HELP_TIMEOUT_MS = 15000
 
+// Build the argv for a --help invocation. On Windows, .cmd/.bat shims (npm,
+// pnpm, ...) cannot be spawned directly with shell:false — Node requires them
+// to run through cmd.exe. Route them via an explicit ['cmd.exe','/c',...]
+// argv so the repo's no-shell:true convention holds. .exe and posix binaries
+// spawn directly. Pure function so it can be unit-tested without spawning.
+export function buildHelpArgs(
+  binaryPath: string,
+  cmdPath: string[]
+): { file: string; args: string[] } {
+  const helpArgs = [...cmdPath, '--help']
+  if (process.platform === 'win32') {
+    const lower = binaryPath.toLowerCase()
+    if (lower.endsWith('.cmd') || lower.endsWith('.bat')) {
+      return { file: process.env.ComSpec || 'cmd.exe', args: ['/c', binaryPath, ...helpArgs] }
+    }
+  }
+  return { file: binaryPath, args: helpArgs }
+}
+
 function runHelp(binaryPath: string, cmdPath: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(binaryPath, [...cmdPath, '--help'], { shell: false })
+    const { file, args } = buildHelpArgs(binaryPath, cmdPath)
+    const child = spawn(file, args, { shell: false })
     let out = ''
     let settled = false
     const label = cmdPath.length ? ` ${cmdPath.join(' ')}` : ''

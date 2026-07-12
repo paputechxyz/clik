@@ -32,8 +32,34 @@ present and that the arch matches.
 - The cobra adapter is a pure-ish module: `parseHelp(text)` has no side effects
   and is unit-tested from `--help` fixtures under
   `src/main/adapter/__tests__/fixtures/`. `discoverTree` shells out.
-- macOS-first. Title bar uses `hiddenInset`.
-- Closing a run tab must kill its PTY (`PtyManager.kill` / `pty:kill`, SIGHUP).
+- macOS-first. Title bar uses `hiddenInset` (macOS only; guarded by a
+  platform check). Closing a run tab must kill its PTY (`PtyManager.kill` /
+  `pty:kill`, SIGHUP).
+
+## Windows support
+
+CLIk also builds and runs on Windows x64. The platform-specific behavior:
+
+- **Native module.** `node-pty` cannot be cross-compiled from macOS to Windows
+  (electron-builder emits a broken binary). The Windows artifact is therefore
+  built by `.github/workflows/release-windows.yml` on a `windows-latest`
+  runner, triggered by the `v*` tag that `npm run release` pushes. `postinstall`
+  (`electron-rebuild`) compiles node-pty for the Windows Electron ABI on that
+  runner. node-pty uses ConPTY on Windows 10 1809+ / Windows 11.
+- **Shell environment.** Windows GUI apps inherit a full environment from the
+  registry (no macOS launchd minimal-env problem), so `ShellEnvCache.refresh()`
+  short-circuits to `process.env` on win32 — no login-shell capture. The posix
+  zsh capture path is unchanged.
+- **Interactive shell tab.** `pty:openShell` spawns `cmd.exe` (COMSPEC) on
+  Windows; posix keeps the login `$SHELL -l`.
+- **Executable resolution.** `resolveOnPath` probes PATHEXT extensions
+  (`.exe`/`.cmd`/`.bat`) on Windows instead of the Unix exec bit.
+- **`--help` discovery.** `.cmd`/`.bat` shims are routed through
+  `cmd.exe /c` (explicit argv, still `shell: false`); `.exe` spawns directly.
+- **Release.** `npm run release` builds macOS locally and pushes the tag; the
+  Windows workflow attaches the NSIS installer + `latest.yml` to the same
+  GitHub release shortly after. Both platforms are unsigned (SmartScreen /
+  Gatekeeper bypasses documented in the README).
 
 ## IPC channels
 

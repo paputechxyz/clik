@@ -21,7 +21,9 @@ function createWindow(): void {
     height: 832,
     minWidth: 960,
     minHeight: 600,
-    titleBarStyle: 'hiddenInset',
+    // hiddenInset is a macOS title-bar style; on Windows it is ignored, so only
+    // set it where it applies and let Windows use its default title bar.
+    ...(process.platform === 'darwin' ? { titleBarStyle: 'hiddenInset' as const } : {}),
     backgroundColor: '#1e1e1e',
     ...(fs.existsSync(LOGO) ? { icon: LOGO } : {}),
     show: false,
