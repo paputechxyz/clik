@@ -3,5 +3,5 @@
 # Branch protection requires review from a code owner; the ruleset grants the
 # owner a bypass so a solo maintainer is not deadlocked on their own PRs.
 # Owning /.github/ here means a PR cannot rewrite its own reviewers or workflows.
-*                @YOUR_GITHUB_HANDLE
-/.github/        @YOUR_GITHUB_HANDLE
+*                @paputechxyz
+/.github/        @paputechxyz
