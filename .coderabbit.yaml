@@ -17,13 +17,12 @@ reviews:
     - "!build/**"
     - "!node_modules/**"
     - "!package-lock.json"
-
-tools:
-  tflint:
-    enabled: false
-  checkov:
-    enabled: false
-  hadolint:
-    enabled: false
-  trivy:
-    enabled: false
+  tools:
+    tflint:
+      enabled: false
+    checkov:
+      enabled: false
+    hadolint:
+      enabled: false
+    trivy:
+      enabled: false
