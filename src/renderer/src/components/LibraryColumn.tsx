@@ -339,7 +339,7 @@ export function LibraryColumn(): JSX.Element {
           >
             {savedCollapsed ? <ChevronDownIcon /> : <ChevronUpIcon />}
             <span className="lib-head-title">Saved</span>
-            {!savedCollapsed && <span className="lib-head-count">{saved.length}</span>}
+            <span className="lib-head-count">{saved.length}</span>
           </button>
           {!savedCollapsed && (
             <span className="lib-head-actions">
@@ -454,7 +454,7 @@ export function LibraryColumn(): JSX.Element {
           >
             {historyCollapsed ? <ChevronDownIcon /> : <ChevronUpIcon />}
             <span className="lib-head-title">History</span>
-            {!historyCollapsed && <span className="lib-head-count">{history.length}</span>}
+            <span className="lib-head-count">{history.length}</span>
           </button>
           {!historyCollapsed && history.length > 0 && (
             <button
