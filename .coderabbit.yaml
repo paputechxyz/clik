@@ -9,7 +9,7 @@ language: en-US
 reviews:
   profile: chill
   auto_review:
-    enabled: true
+    enabled: false
     drafts: false
   path_filters:
     - "!dist/**"
