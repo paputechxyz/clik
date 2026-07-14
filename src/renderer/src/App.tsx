@@ -84,32 +84,34 @@ export function App(): JSX.Element {
       <div className="body" ref={bodyRef}>
         <LibraryColumn />
         <section className="body-right">
-          {!outputExpanded && (
-            <section
-              className="columns-section"
-              style={{ flex: `${topWeight} 1 0`, minHeight: 0 }}
-            >
-              <ColumnNavigator onAddCommand={() => setSettingsOpen(true)} />
-            </section>
-          )}
-
           {outputCollapsed ? (
-            <section className="output-section output-collapsed" style={{ flex: '0 0 26px' }}>
-              <button
-                className="output-expand"
-                title="Expand terminal"
-                onClick={() => setOutputCollapsed(false)}
-              >
-                <ChevronUpIcon />
-                <span className="output-expand-label">Terminal</span>
-              </button>
-            </section>
+            <>
+              <section className="columns-section" style={{ flex: '1 1 0', minHeight: 0 }}>
+                <ColumnNavigator onAddCommand={() => setSettingsOpen(true)} />
+              </section>
+              <section className="output-section output-collapsed" style={{ flex: '0 0 26px' }}>
+                <button
+                  className="output-expand"
+                  title="Expand terminal"
+                  onClick={() => setOutputCollapsed(false)}
+                >
+                  <ChevronUpIcon />
+                  <span className="output-expand-label">Terminal</span>
+                </button>
+              </section>
+            </>
           ) : outputExpanded ? (
             <section className="output-section output-expanded" style={{ flex: '1 1 0', minHeight: 0 }}>
               <RunTabs onCollapse={() => setOutputCollapsed(true)} />
             </section>
           ) : (
             <>
+              <section
+                className="columns-section"
+                style={{ flex: `${topWeight} 1 0`, minHeight: 0 }}
+              >
+                <ColumnNavigator onAddCommand={() => setSettingsOpen(true)} />
+              </section>
               <Resizer
                 orientation="horizontal"
                 title="Drag to resize"
