@@ -66,6 +66,7 @@ export function App(): JSX.Element {
   const topWeight = useLayoutStore((s) => s.topWeight)
   const bottomWeight = useLayoutStore((s) => s.bottomWeight)
   const outputCollapsed = useLayoutStore((s) => s.outputCollapsed)
+  const outputExpanded = useLayoutStore((s) => s.outputExpanded)
   const dragOutputResizer = useLayoutStore((s) => s.dragOutputResizer)
   const setOutputCollapsed = useLayoutStore((s) => s.setOutputCollapsed)
 
@@ -83,12 +84,14 @@ export function App(): JSX.Element {
       <div className="body" ref={bodyRef}>
         <LibraryColumn />
         <section className="body-right">
-          <section
-            className="columns-section"
-            style={{ flex: `${topWeight} 1 0`, minHeight: 0 }}
-          >
-            <ColumnNavigator onAddCommand={() => setSettingsOpen(true)} />
-          </section>
+          {!outputExpanded && (
+            <section
+              className="columns-section"
+              style={{ flex: `${topWeight} 1 0`, minHeight: 0 }}
+            >
+              <ColumnNavigator onAddCommand={() => setSettingsOpen(true)} />
+            </section>
+          )}
 
           {outputCollapsed ? (
             <section className="output-section output-collapsed" style={{ flex: '0 0 26px' }}>
@@ -100,6 +103,10 @@ export function App(): JSX.Element {
                 <ChevronUpIcon />
                 <span className="output-expand-label">Terminal</span>
               </button>
+            </section>
+          ) : outputExpanded ? (
+            <section className="output-section output-expanded" style={{ flex: '1 1 0', minHeight: 0 }}>
+              <RunTabs onCollapse={() => setOutputCollapsed(true)} />
             </section>
           ) : (
             <>

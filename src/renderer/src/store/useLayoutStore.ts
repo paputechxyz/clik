@@ -15,6 +15,7 @@ export interface PersistedLayout {
   topWeight: number
   bottomWeight: number
   outputCollapsed: boolean
+  outputExpanded: boolean
 }
 
 function loadPersisted(): Partial<PersistedLayout> | null {
@@ -51,11 +52,13 @@ interface LayoutState {
   topWeight: number
   bottomWeight: number
   outputCollapsed: boolean
+  outputExpanded: boolean
 
   syncColumnCount: (count: number) => void
   setColumnCollapsed: (i: number, collapsed: boolean) => void
   dragColumnResizer: (i: number, containerSize: number, deltaPx: number) => void
   setOutputCollapsed: (collapsed: boolean) => void
+  toggleOutputExpanded: () => void
   dragOutputResizer: (containerSize: number, deltaPx: number) => void
 }
 
@@ -67,6 +70,7 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
   topWeight: initial?.topWeight ?? DEFAULT_TOP_WEIGHT,
   bottomWeight: initial?.bottomWeight ?? DEFAULT_BOTTOM_WEIGHT,
   outputCollapsed: initial?.outputCollapsed ?? false,
+  outputExpanded: initial?.outputExpanded ?? false,
 
   syncColumnCount(count) {
     const { columnWeights, columnCollapsed } = get()
@@ -105,9 +109,34 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
 
   setOutputCollapsed(collapsed) {
     set((s) => {
-      const next = { ...snapshot(s), outputCollapsed: collapsed }
+      // Collapsing from the expanded (full-height) state should drop back to
+      // the default size when later un-collapsed, so reset the weights.
+      const resetWeights = collapsed && s.outputExpanded
+      const outputExpanded = collapsed ? false : s.outputExpanded
+      const topWeight = resetWeights ? DEFAULT_TOP_WEIGHT : s.topWeight
+      const bottomWeight = resetWeights ? DEFAULT_BOTTOM_WEIGHT : s.bottomWeight
+      const next = { ...snapshot(s), outputCollapsed: collapsed, outputExpanded, topWeight, bottomWeight }
       persist(next)
-      return { outputCollapsed: collapsed }
+      return resetWeights
+        ? { outputCollapsed: collapsed, outputExpanded, topWeight, bottomWeight }
+        : { outputCollapsed: collapsed, outputExpanded }
+    })
+  },
+
+  toggleOutputExpanded() {
+    set((s) => {
+      if (s.outputExpanded) {
+        // Toggle off -> restore to the default size.
+        const topWeight = DEFAULT_TOP_WEIGHT
+        const bottomWeight = DEFAULT_BOTTOM_WEIGHT
+        const next = { ...snapshot(s), outputExpanded: false, topWeight, bottomWeight }
+        persist(next)
+        return { outputExpanded: false, topWeight, bottomWeight }
+      }
+      // Expand -> terminal takes the full column height.
+      const next = { ...snapshot(s), outputExpanded: true, outputCollapsed: false }
+      persist(next)
+      return { outputExpanded: true, outputCollapsed: false }
     })
   },
 
@@ -130,6 +159,7 @@ function snapshot(s: LayoutState): PersistedLayout {
     columnCollapsed: s.columnCollapsed,
     topWeight: s.topWeight,
     bottomWeight: s.bottomWeight,
-    outputCollapsed: s.outputCollapsed
+    outputCollapsed: s.outputCollapsed,
+    outputExpanded: s.outputExpanded
   }
 }

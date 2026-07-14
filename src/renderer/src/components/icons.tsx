@@ -50,6 +50,24 @@ export function ChevronUpIcon({ className }: { className?: string }): JSX.Elemen
   )
 }
 
+export function ChevronsUpIcon({ className }: { className?: string }): JSX.Element {
+  return (
+    <svg className={className} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="18 11 12 5 6 11" />
+      <polyline points="18 17 12 11 6 17" />
+    </svg>
+  )
+}
+
+export function ChevronsDownIcon({ className }: { className?: string }): JSX.Element {
+  return (
+    <svg className={className} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="6 7 12 13 18 7" />
+      <polyline points="6 13 12 19 18 13" />
+    </svg>
+  )
+}
+
 export function ChevronDownIcon({ className }: { className?: string }): JSX.Element {
   return (
     <svg className={className} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

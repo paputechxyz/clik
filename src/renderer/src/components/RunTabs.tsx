@@ -1,7 +1,8 @@
 import { useAppStore } from '../store/useAppStore'
 import type { Run } from '../store/useAppStore'
+import { useLayoutStore } from '../store/useLayoutStore'
 import { TerminalView } from './TerminalView'
-import { ChevronDownIcon, CloseIcon } from './icons'
+import { ChevronsDownIcon, ChevronsUpIcon, ChevronDownIcon, CloseIcon } from './icons'
 
 interface RunTabsProps {
   onCollapse: () => void
@@ -13,6 +14,8 @@ export function RunTabs({ onCollapse }: RunTabsProps): JSX.Element {
   const setActiveRun = useAppStore((s) => s.setActiveRun)
   const closeRun = useAppStore((s) => s.closeRun)
   const openShellTab = useAppStore((s) => s.openShellTab)
+  const outputExpanded = useLayoutStore((s) => s.outputExpanded)
+  const toggleOutputExpanded = useLayoutStore((s) => s.toggleOutputExpanded)
 
   const active = runs.find((r) => r.id === activeRunId) ?? null
 
@@ -58,6 +61,13 @@ export function RunTabs({ onCollapse }: RunTabsProps): JSX.Element {
         ))}
         <button className="tab-add" title="New shell tab (Cmd+T)" onClick={() => void openShellTab()}>
           +
+        </button>
+        <button
+          className={`icon-btn expand-btn${outputExpanded ? ' active' : ''}`}
+          title={outputExpanded ? 'Restore terminal' : 'Expand terminal'}
+          onClick={toggleOutputExpanded}
+        >
+          {outputExpanded ? <ChevronsDownIcon /> : <ChevronsUpIcon />}
         </button>
         <button className="icon-btn collapse-btn" title="Collapse terminal" onClick={onCollapse}>
           <ChevronDownIcon />
