@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type { CommandNode } from '../../../shared/types'
 import { useAppStore } from '../store/useAppStore'
 import { useLayoutStore } from '../store/useLayoutStore'
@@ -10,6 +10,56 @@ interface Column {
   items: CommandNode[]
   selected: string | undefined
   depth: number
+}
+
+const TYPEAHEAD_RESET_MS = 2000
+
+/**
+ * Incremental type-ahead with a 2s idle reset. Typing accumulates a prefix
+ * (e.g. "doc" -> "doctor"); after 2s of no input the buffer clears so the next
+ * keystroke starts fresh (e.g. "t" -> "tag"). Returns a keydown handler bound
+ * to a given list of names and an index-based select callback.
+ */
+function useTypeAhead(): (
+  e: KeyboardEvent<HTMLElement>,
+  names: string[],
+  onSelectIndex: (index: number) => void
+) => void {
+  const bufferRef = useRef('')
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearTimeout(timerRef.current)
+    },
+    []
+  )
+
+  return (e, names, onSelectIndex) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return
+    if (e.key.length !== 1) return
+    e.preventDefault()
+    const ch = e.key.toLowerCase()
+    const acc = bufferRef.current + ch
+    let idx = names.findIndex((n) => n.toLowerCase().startsWith(acc))
+    if (idx === -1) {
+      // accumulated prefix matched nothing — restart from the single char
+      idx = names.findIndex((n) => n.toLowerCase().startsWith(ch))
+      bufferRef.current = idx === -1 ? '' : ch
+    } else {
+      bufferRef.current = acc
+    }
+    if (timerRef.current) clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(() => {
+      bufferRef.current = ''
+      timerRef.current = null
+    }, TYPEAHEAD_RESET_MS)
+    if (idx !== -1) {
+      onSelectIndex(idx)
+      const li = e.currentTarget.children[idx] as HTMLElement | undefined
+      li?.scrollIntoView({ block: 'nearest' })
+    }
+  }
 }
 
 export function ColumnNavigator({ onAddCommand }: { onAddCommand: () => void }): JSX.Element {
@@ -33,6 +83,7 @@ export function ColumnNavigator({ onAddCommand }: { onAddCommand: () => void }):
   const sectionRef = useRef<HTMLDivElement>(null)
   const [sectionWidth, setSectionWidth] = useState(0)
   const [importOpen, setImportOpen] = useState(false)
+  const typeAhead = useTypeAhead()
 
   useEffect(() => {
     const el = sectionRef.current
@@ -102,7 +153,18 @@ export function ColumnNavigator({ onAddCommand }: { onAddCommand: () => void }):
             <PlusIcon /> Add a command
           </button>
         )}
-        <ul className="entry-list">
+        <ul
+          className="entry-list"
+          tabIndex={0}
+          onMouseDown={(e) => e.currentTarget.focus()}
+          onKeyDown={(ev) =>
+            typeAhead(
+              ev,
+              entries.map((en) => en.name),
+              (i) => void selectEntry(entries[i].id)
+            )
+          }
+        >
           {entries.map((e) => (
             <li
               key={e.id}
@@ -181,7 +243,18 @@ export function ColumnNavigator({ onAddCommand }: { onAddCommand: () => void }):
         key: `col-${i}`,
         title: i === 0 ? 'Command' : 'Subcommand',
         body: (
-          <ul className="cmd-list">
+          <ul
+            className="cmd-list"
+            tabIndex={0}
+            onMouseDown={(e) => e.currentTarget.focus()}
+            onKeyDown={(ev) =>
+              typeAhead(
+                ev,
+                col.items.map((it) => it.name),
+                (i) => selectCommand(col.depth, col.items[i].name)
+              )
+            }
+          >
             {col.items.map((item) => (
               <li
                 key={item.name}
