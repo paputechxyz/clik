@@ -38,40 +38,44 @@ export function RunTabs({ onCollapse }: RunTabsProps): JSX.Element {
 
   return (
     <section className="output">
-      <div className="run-tabs">
-        {runs.map((r) => (
-          <div
-            key={r.id}
-            className={`run-tab${r.id === activeRunId ? ' active' : ''}`}
-            onClick={() => setActiveRun(r.id)}
-          >
-            <span className={`status-dot status-${r.status}`} />
-            <span className="run-title">{r.title}</span>
-            <button
-              className="tab-close"
-              title="Close"
-              onClick={(e) => {
-                e.stopPropagation()
-                void closeRun(r.id)
-              }}
+      <div className="run-tabs-bar">
+        <div className="run-tabs">
+          {runs.map((r) => (
+            <div
+              key={r.id}
+              className={`run-tab${r.id === activeRunId ? ' active' : ''}`}
+              onClick={() => setActiveRun(r.id)}
             >
-              <CloseIcon />
-            </button>
-          </div>
-        ))}
-        <button className="tab-add" title="New shell tab (Cmd+T)" onClick={() => void openShellTab()}>
-          +
-        </button>
-        <button
-          className={`icon-btn expand-btn${outputExpanded ? ' active' : ''}`}
-          title={outputExpanded ? 'Restore terminal' : 'Expand terminal'}
-          onClick={toggleOutputExpanded}
-        >
-          {outputExpanded ? <ChevronsDownIcon /> : <ChevronsUpIcon />}
-        </button>
-        <button className="icon-btn collapse-btn" title="Collapse terminal" onClick={onCollapse}>
-          <ChevronDownIcon />
-        </button>
+              <span className={`status-dot status-${r.status}`} />
+              <span className="run-title">{r.title}</span>
+              <button
+                className="tab-close"
+                title="Close"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void closeRun(r.id)
+                }}
+              >
+                <CloseIcon />
+              </button>
+            </div>
+          ))}
+          <button className="tab-add" title="New shell tab (Cmd+T)" onClick={() => void openShellTab()}>
+            +
+          </button>
+        </div>
+        <div className="run-tabs-actions">
+          <button
+            className={`icon-btn expand-btn${outputExpanded ? ' active' : ''}`}
+            title={outputExpanded ? 'Restore terminal' : 'Expand terminal'}
+            onClick={toggleOutputExpanded}
+          >
+            {outputExpanded ? <ChevronsDownIcon /> : <ChevronsUpIcon />}
+          </button>
+          <button className="icon-btn collapse-btn" title="Collapse terminal" onClick={onCollapse}>
+            <ChevronDownIcon />
+          </button>
+        </div>
       </div>
 
       {active ? <RunPane key={active.id} run={active} /> : null}

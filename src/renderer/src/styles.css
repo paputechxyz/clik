@@ -592,12 +592,16 @@ button { font-family: var(--font-ui); color: inherit; }
 }
 .output-empty { color: var(--fg-faint); padding: var(--space-5) var(--space-4); }
 
-.run-tabs {
-  display: flex; border-bottom: 1px solid var(--border);
+.run-tabs-bar {
+  display: flex; align-items: stretch;
+  border-bottom: 1px solid var(--border);
   background: color-mix(in oklch, var(--panel-2) 78%, var(--bg));
-  overflow-x: auto; position: relative; padding-right: 64px;
 }
-.run-tabs-empty { padding: var(--space-2) var(--space-3); border-bottom: none; }
+.run-tabs {
+  display: flex; overflow-x: auto; position: relative;
+}
+.run-tabs-bar .run-tabs { flex: 1 1 auto; min-width: 0; }
+.run-tabs-empty { padding: var(--space-2) var(--space-3); border-bottom: none; background: color-mix(in oklch, var(--panel-2) 78%, var(--bg)); }
 
 .run-tab {
   display: inline-flex; align-items: center; gap: var(--space-2);
@@ -635,14 +639,10 @@ button { font-family: var(--font-ui); color: inherit; }
   100% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--accent) 0%, transparent); }
 }
 
-/* collapse-btn is .icon-btn + absolute positioning over the tab strip */
-.expand-btn {
-  position: absolute; right: 35px; top: 50%; transform: translateY(-50%);
-}
+/* expand/collapse buttons live in a non-scrolling actions area so they stay
+   clickable regardless of tab overflow or scroll position */
+.run-tabs-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 2px; padding: 0 6px 0 4px; }
 .expand-btn.active { background: var(--hover); color: var(--fg); }
-.collapse-btn {
-  position: absolute; right: 5px; top: 50%; transform: translateY(-50%);
-}
 
 .run-pane { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .run-meta {
