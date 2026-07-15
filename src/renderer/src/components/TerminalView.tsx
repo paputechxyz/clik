@@ -5,6 +5,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import type { Run } from '../store/useAppStore'
 import { computeWriteDelta } from '../lib/term-delta'
+import { translateEditKey, computeCursorDelta } from '../lib/term-keys'
 import { ChevronUpIcon, ChevronDownIcon, CloseIcon } from './icons'
 
 // Highlight colors (sRGB hex — xterm decorations require #RRGGBB). Dim for all
@@ -180,17 +181,67 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
     term.onResize(({ cols, rows }) => window.clik.pty.resize(run.id, cols, rows))
     window.clik.pty.resize(run.id, term.cols, term.rows)
 
-    // Intercept Cmd/Ctrl+F inside the terminal's keystream to open the
-    // in-terminal search bar instead of (no-op) browser find.
+    // Intercept Cmd/Ctrl+F to open the in-terminal search bar, and translate
+    // macOS editing combos (Option+arrow word move, Cmd+arrow line jump, word/
+    // line delete) into the readline/zsh bytes the shell line editor binds.
+    // Returning false suppresses xterm's default sequence (e.g. the `\e[1;3D`
+    // garbage for Option+Left); the translated bytes are sent straight to the
+    // PTY. Everything else falls through so plain arrows, history, and typed
+    // characters keep working.
     term.attachCustomKeyEventHandler((e) => {
-      if (e.type === 'keydown' && (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'f') {
+      if (e.type !== 'keydown') return true
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'f') {
         setSearchOpen(true)
+        return false
+      }
+      if (restoringRef.current) return true
+      const seq = translateEditKey(e)
+      if (seq !== null) {
+        window.clik.pty.input(run.id, seq)
         return false
       }
       return true
     })
 
     term.focus()
+
+    // Click-to-move the shell cursor (opencode-style). A plain left-click (no
+    // drag) on the prompt line sends the matching number of arrow-key bytes to
+    // reposition the cursor. Only active in the normal buffer so full-screen
+    // TUIs (alternate buffer) keep handling their own mouse; click-drag still
+    // selects because a drag is detected and ignored here.
+    let downX = 0
+    let downY = 0
+    let armed = false
+    const onDown = (e: MouseEvent): void => {
+      if (e.button !== 0) return
+      downX = e.clientX
+      downY = e.clientY
+      armed = true
+    }
+    const onUp = (e: MouseEvent): void => {
+      if (e.button !== 0 || !armed) return
+      armed = false
+      if (restoringRef.current) return
+      const dragged = Math.abs(e.clientX - downX) > 4 || Math.abs(e.clientY - downY) > 4
+      if (dragged) return
+      if (term.buffer.active.type !== 'normal') return
+      const termEl = term.element
+      if (!termEl) return
+      const rect = termEl.getBoundingClientRect()
+      const cursorEl = termEl.querySelector('.xterm-cursor') as HTMLElement | null
+      const curRect = cursorEl?.getBoundingClientRect()
+      const cellW = curRect?.width ?? rect.width / term.cols
+      const cellH = curRect?.height ?? rect.height / term.rows
+      if (cellW <= 0 || cellH <= 0) return
+      const row = Math.floor((e.clientY - rect.top) / cellH)
+      const col = Math.floor((e.clientX - rect.left) / cellW)
+      if (row !== term.buffer.active.cursorY) return
+      const seq = computeCursorDelta(col, term.buffer.active.cursorX)
+      if (seq) window.clik.pty.input(run.id, seq)
+    }
+    container.addEventListener('mousedown', onDown)
+    window.addEventListener('mouseup', onUp)
 
     const ro = new ResizeObserver(() => {
       try {
@@ -203,6 +254,8 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
 
     return () => {
       ro.disconnect()
+      container.removeEventListener('mousedown', onDown)
+      window.removeEventListener('mouseup', onUp)
       allDecosRef.current?.dispose()
       activeDecoRef.current?.dispose()
       term.dispose()
