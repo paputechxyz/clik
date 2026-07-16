@@ -325,6 +325,91 @@ function parseFlagsAuto(block: string[]): Flag[] {
   return parseFlags(block)
 }
 
+// git's `-h` usage dump lists flags in its own layout (no "Flags:" section),
+// e.g.
+//     -l, --list            list tag names
+//     -n[<n>]               print <n> lines of each tag message
+//     -a, --[no-]annotate   annotated tag, needs a message
+//     -m, --message <message>
+//                           tag message
+// `[no-]` marks a negatable bool; `<arg>` / `[<arg>]` / `[=arg]` mark a value
+// flag; a flag with no inline description takes it from the next indented line.
+const GIT_FLAG_RE = /^\s+(?:(-(\w)),\s+)?(--(?:\[no-\])?[\w-]+|-(\w))(.*)$/
+const GIT_FLAG_START = /^\s+(-\w[,\s]+)?--?(?:\[no-\])?[\w-]/
+
+function parseGitFlagLine(line: string): { flag: Flag; inlineDesc: string } | null {
+  const m = line.match(GIT_FLAG_RE)
+  if (!m) return null
+  const shortFromLong = m[2]
+  const shortOnly = m[4]
+  const spec = m[3]
+  let name: string
+  let singleDash = false
+  let negatable = false
+  if (spec.startsWith('--')) {
+    name = spec.slice(2)
+    if (name.startsWith('[no-]')) {
+      negatable = true
+      name = name.slice('[no-]'.length)
+    }
+  } else {
+    name = shortOnly ?? shortFromLong ?? ''
+    singleDash = true
+    if (!name) return null
+  }
+  let rest = (m[5] ?? '').replace(/^\s+/, '')
+  let argSpec = ''
+  if (/^[<[]/.test(rest)) {
+    const am = rest.match(/^(\[[^\]]*\]|<[^>]+>)\s*/)
+    if (am) {
+      argSpec = am[1]
+      rest = rest.slice(am[0].length)
+    }
+  }
+  // A required "<arg>" always takes a value. An optional "[=…]" on a [no-]
+  // toggle (e.g. --[no-]column[=<style>]) stays a bool. Bare or optional-arg
+  // flags with [no-] are bools.
+  const takesValue = argSpec !== '' && !(negatable && /^\[=/.test(argSpec))
+  const type: FlagType = takesValue ? (/<n>|<num>/.test(argSpec) ? 'int' : 'string') : 'bool'
+  const flag: Flag = {
+    name,
+    shorthand: singleDash ? undefined : shortFromLong,
+    type,
+    usage: rest.trim(),
+    singleDash
+  }
+  if (type === 'bool') flag.default = false
+  return { flag, inlineDesc: rest.trim() }
+}
+
+// Walk the whole usage dump (not a pre-isolated block), pulling out git-style
+// flag entries and folding in their following-line descriptions. Lines claimed
+// as flags or descriptions are added to `consumed` so the child scan skips them.
+function parseGitUsageFlags(lines: string[], consumed: Set<number>): Flag[] {
+  const out: Flag[] = []
+  for (let i = 0; i < lines.length; i++) {
+    if (consumed.has(i)) continue
+    const parsed = parseGitFlagLine(lines[i])
+    if (!parsed) continue
+    consumed.add(i)
+    if (parsed.inlineDesc === '') {
+      const next = lines[i + 1]
+      if (
+        next !== undefined &&
+        !consumed.has(i + 1) &&
+        /^\s+\S/.test(next) &&
+        !GIT_FLAG_START.test(next) &&
+        !/^\s+or:/.test(next)
+      ) {
+        parsed.flag.usage = next.trim()
+        consumed.add(i + 1)
+      }
+    }
+    out.push(parsed.flag)
+  }
+  return out
+}
+
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
@@ -443,16 +528,30 @@ export function parseHelp(text: string, prefixPath?: string[]): ParsedHelp {
     }
   }
 
-  // No standard section headers were found (e.g. git's plain prose layout).
-  // Fall back to scanning every line for an indented "name  description"
-  // child entry, and trim the long description to the intro text before the
-  // first entry (dropping a leading "usage:" block) so the tree is populated.
+  // No standard section headers were found (e.g. git's plain prose layout, or
+  // git's `-h` usage dump). Fall back to scanning lines directly. For a usage
+  // dump we first peel off the synopsis ("usage:" / "   or:" / bracket
+  // continuations) and extract git-style flag entries (keeping their
+  // description lines out of the child scan), then treat the remaining indented
+  // "name  description" lines as children and trim the long description to the
+  // intro before the first entry (dropping a leading "usage:" block).
+  let headerlessFlags: Flag[] = []
   if (sections.size === 0) {
-    const firstChildIdx = lines.findIndex((l) => CHILD_RE.test(l))
-    if (firstChildIdx !== -1) {
+    const consumed = new Set<number>()
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i]
+      if (/^usage:\s/i.test(l) || /^\s+or:\s/.test(l) || /^\s+[[<(]/.test(l)) consumed.add(i)
+    }
+    headerlessFlags = parseGitUsageFlags(lines, consumed)
+
+    const firstChildIdx = lines.findIndex((l, i) => !consumed.has(i) && CHILD_RE.test(l))
+    const firstFlagIdx = lines.findIndex((l) => GIT_FLAG_START.test(l))
+    const cutoff = firstChildIdx !== -1 ? firstChildIdx : firstFlagIdx
+    if (cutoff > 0) {
       const filtered: string[] = []
       let skippingUsage = false
-      for (const l of lines.slice(0, firstChildIdx)) {
+      for (let i = 0; i < cutoff; i++) {
+        const l = lines[i]
         if (/^usage:\s/i.test(l)) {
           skippingUsage = true
           continue
@@ -463,8 +562,9 @@ export function parseHelp(text: string, prefixPath?: string[]): ParsedHelp {
       }
       long = filtered.join('\n').trim()
     }
-    for (const line of lines) {
-      const m = line.match(CHILD_RE)
+    for (let i = 0; i < lines.length; i++) {
+      if (consumed.has(i)) continue
+      const m = lines[i].match(CHILD_RE)
       if (m) children.push({ name: m[1], short: m[2].trim() })
     }
   }
@@ -514,7 +614,7 @@ export function parseHelp(text: string, prefixPath?: string[]): ParsedHelp {
   return {
     long,
     usage: usageLine.trim(),
-    flags: parseFlagsAuto(flagBlocks),
+    flags: [...parseFlagsAuto(flagBlocks), ...headerlessFlags],
     globalFlags: parseFlagsAuto(globalFlagBlocks),
     children
   }
@@ -529,9 +629,10 @@ const HELP_TIMEOUT_MS = 15000
 // spawn directly. Pure function so it can be unit-tested without spawning.
 export function buildHelpArgs(
   binaryPath: string,
-  cmdPath: string[]
+  cmdPath: string[],
+  helpFlag = '--help'
 ): { file: string; args: string[] } {
-  const helpArgs = [...cmdPath, '--help']
+  const helpArgs = [...cmdPath, helpFlag]
   if (process.platform === 'win32') {
     const lower = binaryPath.toLowerCase()
     if (lower.endsWith('.cmd') || lower.endsWith('.bat')) {
@@ -541,13 +642,24 @@ export function buildHelpArgs(
   return { file: binaryPath, args: helpArgs }
 }
 
-function runHelp(binaryPath: string, cmdPath: string[]): Promise<string> {
+// nroff man pages (git subcommands via `--help`, gcloud, …) start with a
+// "NAME(section)" title like "GIT-TAG(1)" and render bold through backspace
+// overstrike ("N\bNA\bAM\bME\bE"). Cobra/yargs usage dumps never do either, so
+// this reliably flags output our parser can't read — we retry with `-h`, which
+// git emits as a clean usage dump.
+export function looksLikeManPage(text: string): boolean {
+  const head = text.slice(0, 256)
+  return /[A-Z][A-Z0-9-]+\(\d+[A-Za-z]*\)/.test(head)
+}
+
+function runHelpArgs(binaryPath: string, cmdPath: string[], helpFlag: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    const { file, args } = buildHelpArgs(binaryPath, cmdPath)
+    const { file, args } = buildHelpArgs(binaryPath, cmdPath, helpFlag)
     const child = spawn(file, args, { shell: false })
     let out = ''
     let settled = false
     const label = cmdPath.length ? ` ${cmdPath.join(' ')}` : ''
+    const flagLabel = `${label} ${helpFlag}`
     const done = (fn: () => void) => {
       if (settled) return
       settled = true
@@ -562,7 +674,7 @@ function runHelp(binaryPath: string, cmdPath: string[]): Promise<string> {
       } catch {
         // ignore
       }
-      reject(new Error(`"${path.basename(binaryPath)}${label} --help" timed out after ${HELP_TIMEOUT_MS / 1000}s`))
+      reject(new Error(`"${path.basename(binaryPath)}${flagLabel}" timed out after ${HELP_TIMEOUT_MS / 1000}s`))
     }, HELP_TIMEOUT_MS)
     child.stdout.on('data', (d: Buffer) => {
       out += d.toString('utf8')
@@ -571,7 +683,7 @@ function runHelp(binaryPath: string, cmdPath: string[]): Promise<string> {
       out += d.toString('utf8')
     })
     child.on('error', (err) => {
-      console.error(`[discover] ${path.basename(binaryPath)}${label} --help spawn error:`, err.message)
+      console.error(`[discover] ${path.basename(binaryPath)}${flagLabel} spawn error:`, err.message)
       done(() => reject(err))
     })
     child.on('exit', (code, signal) => {
@@ -579,11 +691,25 @@ function runHelp(binaryPath: string, cmdPath: string[]): Promise<string> {
         done(() => resolve(out))
       } else {
         const detail = code !== null ? `code ${code}` : `signal ${signal ?? 'unknown'}`
-        const msg = `"${path.basename(binaryPath)}${label} --help" exited with ${detail}`
-        console.warn(`[discover] ${path.basename(binaryPath)}${label} --help failed: ${msg}`)
+        const msg = `"${path.basename(binaryPath)}${flagLabel}" exited with ${detail}`
+        console.warn(`[discover] ${path.basename(binaryPath)}${flagLabel} failed: ${msg}`)
         done(() => reject(new Error(msg)))
       }
     })
+  })
+}
+
+function runHelp(binaryPath: string, cmdPath: string[]): Promise<string> {
+  return runHelpArgs(binaryPath, cmdPath, '--help').then(async (out) => {
+    if (looksLikeManPage(out)) {
+      try {
+        const short = await runHelpArgs(binaryPath, cmdPath, '-h')
+        if (short.trim().length > 0) return short
+      } catch {
+        // keep the man-page output; parseHelp will do its best
+      }
+    }
+    return out
   })
 }
 

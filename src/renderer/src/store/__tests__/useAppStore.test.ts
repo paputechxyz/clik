@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import type { CommandTree, ClikApi, Folder, LibraryData, SavedCommandItem, HistoryItem } from '../../../../shared/types'
-import { useAppStore } from '../useAppStore'
+import { useAppStore, isRunnable } from '../useAppStore'
 
 function fakeTree(label: string): CommandTree {
   return {
@@ -322,5 +322,128 @@ describe('library folders, move/reorder, migration behavior', () => {
     // New item lands at the END; existing order preserved (not re-sorted).
     expect(s.saved.map((it) => it.name)).toEqual(['zebra', 'apple', 'x sub'])
     expect(s.saved[2].folderId).toBeNull()
+  })
+})
+
+// A group that exposes its own flags (e.g. `git tag -l`) must be directly
+// runnable/editable, unlike a pure container group with no flags.
+function treeWithFlaggedGroup(): CommandTree {
+  return {
+    binaryPath: '/bin/x',
+    binaryName: 'x',
+    root: {
+      name: 'x',
+      path: [],
+      use: 'x',
+      short: '',
+      long: '',
+      isGroup: true,
+      flags: [],
+      inheritedFlags: [],
+      children: [
+        {
+          name: 'tag',
+          path: ['tag'],
+          use: 'x tag',
+          short: '',
+          long: '',
+          isGroup: true,
+          flags: [{ name: 'list', shorthand: 'l', type: 'bool', default: false, usage: 'list tags' }],
+          inheritedFlags: [],
+          children: [
+            {
+              name: 'list',
+              path: ['tag', 'list'],
+              use: 'x tag list',
+              short: '',
+              long: '',
+              isGroup: false,
+              flags: [],
+              inheritedFlags: [],
+              children: []
+            }
+          ]
+        },
+        {
+          name: 'container',
+          path: ['container'],
+          use: 'x container',
+          short: '',
+          long: '',
+          isGroup: true,
+          flags: [],
+          inheritedFlags: [],
+          children: [
+            {
+              name: 'deep',
+              path: ['container', 'deep'],
+              use: 'x container deep',
+              short: '',
+              long: '',
+              isGroup: false,
+              flags: [],
+              inheritedFlags: [],
+              children: []
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
+
+describe('runnable group commands (group with its own flags)', () => {
+  beforeEach(() => {
+    useAppStore.setState({
+      entries: [{ id: 'e1', name: 'x', binaryPath: '/bin/x', env: {} }],
+      trees: { e1: treeWithFlaggedGroup() },
+      selectedEntryId: 'e1',
+      selection: [],
+      flagValues: {},
+      positionalArgs: '',
+      saved: [],
+      history: [],
+      folders: [],
+      runs: [],
+      activeRunId: null
+    })
+  })
+
+  it('isRunnable: leaf true, group-with-flags true, pure-container group false', () => {
+    const root = useAppStore.getState().trees.e1!.root
+    const tag = root.children.find((c) => c.name === 'tag')!
+    const container = root.children.find((c) => c.name === 'container')!
+    const leaf = tag.children[0]
+    expect(isRunnable(leaf)).toBe(true)
+    expect(isRunnable(tag)).toBe(true)
+    expect(isRunnable(container)).toBe(false)
+  })
+
+  it('saveCurrentCommand saves a runnable group-with-flags command', () => {
+    const libSave = vi.fn<(d: LibraryData) => Promise<void>>(async () => undefined)
+    installApi({ library: { get: async () => ({ saved: [], history: [], folders: [] }), save: libSave } })
+    useAppStore.setState({ selection: ['tag'], flagValues: { list: true } })
+    useAppStore.getState().saveCurrentCommand()
+    const s = useAppStore.getState()
+    expect(s.saved).toHaveLength(1)
+    expect(s.saved[0].selection).toEqual(['tag'])
+    expect(s.saved[0].flags).toEqual({ list: true })
+  })
+
+  it('saveCurrentCommand is a no-op for a pure container group', () => {
+    const libSave = vi.fn<(d: LibraryData) => Promise<void>>(async () => undefined)
+    installApi({ library: { get: async () => ({ saved: [], history: [], folders: [] }), save: libSave } })
+    useAppStore.setState({ selection: ['container'] })
+    useAppStore.getState().saveCurrentCommand()
+    expect(useAppStore.getState().saved).toHaveLength(0)
+    expect(libSave).not.toHaveBeenCalled()
+  })
+
+  it('applySelectionToFlags loads flag values for a runnable group via selectCommand', () => {
+    useAppStore.setState({ selection: ['tag'] })
+    useAppStore.getState().selectCommand(0, 'tag')
+    const fv = useAppStore.getState().flagValues
+    expect('list' in fv).toBe(true)
+    expect(fv.list).toBe(false) // bool default false
   })
 })

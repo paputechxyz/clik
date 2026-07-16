@@ -134,6 +134,10 @@ function findNode(tree: CommandTree, selection: string[]): CommandNode | null {
   return node
 }
 
+export function isRunnable(node: CommandNode): boolean {
+  return !node.isGroup || node.flags.length > 0 || node.inheritedFlags.length > 0
+}
+
 function pathBase(p: string): string {
   const i = p.lastIndexOf('/')
   return i === -1 ? p : p.slice(i + 1)
@@ -404,7 +408,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const tree = trees[selectedEntryId]
     if (!entry || !tree) return
     const node = findNode(tree, selection)
-    if (!node || node.isGroup) return
+    if (!node || !isRunnable(node)) return
     const flags = [...node.flags, ...node.inheritedFlags]
     const argv = buildArgv({
       commandPath: selection,
@@ -497,7 +501,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const tree = trees[selectedEntryId]
     if (!entry || !tree) return
     const node = findNode(tree, selection)
-    if (!node || node.isGroup) return
+    if (!node || !isRunnable(node)) return
     // No-op when an identical snapshot is already saved (the bookmark is green).
     const sig = configSignature(flagValues, positionalArgs)
     if (
@@ -830,7 +834,7 @@ function applySelectionToFlags(
     return
   }
   const node = findNode(tree, selection)
-  if (node && !node.isGroup) {
+  if (node && isRunnable(node)) {
     const saved = get().commands[commandKey(entryId, selection)]
     const flagValues = buildFlagValues(node, saved)
     set({ flagValues, positionalArgs: saved?.positional ?? '' })
@@ -879,7 +883,7 @@ function persistCurrentCommand(): void {
   const tree = s.trees[selectedEntryId]
   if (!tree) return
   const node = findNode(tree, selection)
-  if (!node || node.isGroup) return
+  if (!node || !isRunnable(node)) return
   const key = commandKey(selectedEntryId, selection)
   useAppStore.setState((st) => ({
     commands: { ...st.commands, [key]: { flags: flagValues, positional: positionalArgs } }

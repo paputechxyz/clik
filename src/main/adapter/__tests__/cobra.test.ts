@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
-import { parseHelp, buildHelpArgs } from '../cobra'
+import { parseHelp, buildHelpArgs, looksLikeManPage } from '../cobra'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const fx = (name: string): string => readFileSync(path.join(here, 'fixtures', name), 'utf8')
@@ -502,6 +502,93 @@ describe('parseHelp - git root (no section headers, prose layout)', () => {
     expect(p.long).toContain('These are common Git commands')
     expect(p.long).not.toContain('usage: git')
     expect(p.long).not.toContain('Clone a repository')
+  })
+})
+
+describe('parseHelp - git tag (usage dump, no section headers)', () => {
+  // `git tag -h` (the form discovery retries to after detecting the `--help`
+  // man page) lists flags in git's own layout with no "Flags:" header. The
+  // parser must surface the flags and must NOT turn synopsis ("   or:") or
+  // multi-line flag descriptions into bogus subcommands.
+  const p = parseHelp(fx('git-tag.txt'))
+
+  it('parses git-style flags incl. [no-] negation, args, and next-line descs', () => {
+    const names = p.flags.map((f) => f.name)
+    expect(names).toContain('list')
+    expect(names).toContain('delete')
+    expect(names).toContain('verify')
+    expect(names).toContain('annotate') // -a, --[no-]annotate
+    expect(names).toContain('message') // -m, --message <message> (desc on next line)
+    expect(names).toContain('trailer')
+    expect(names).toContain('column') // --[no-]column[=<style>]
+    expect(names).toContain('sort')
+    expect(names).toContain('color')
+
+    const list = p.flags.find((f) => f.name === 'list')!
+    expect(list.type).toBe('bool')
+    expect(list.shorthand).toBe('l')
+    expect(list.usage).toBe('list tag names')
+
+    const annotate = p.flags.find((f) => f.name === 'annotate')!
+    expect(annotate.type).toBe('bool') // [no-] => bool
+    expect(annotate.shorthand).toBe('a')
+
+    const message = p.flags.find((f) => f.name === 'message')!
+    expect(message.type).toBe('string') // <message> arg
+    expect(message.usage).toBe('tag message') // description folded from next line
+
+    const trailer = p.flags.find((f) => f.name === 'trailer')!
+    expect(trailer.type).toBe('string')
+    expect(trailer.usage).toBe('add custom trailer(s)')
+
+    // [no-] AND a required value => value flag, not bool
+    expect(p.flags.find((f) => f.name === 'file')!.type).toBe('string') // --[no-]file <file>
+    expect(p.flags.find((f) => f.name === 'sort')!.type).toBe('string') // --[no-]sort <key>
+    expect(p.flags.find((f) => f.name === 'format')!.type).toBe('string') // --[no-]format <format>
+    // [no-] with optional [=value] stays a bool toggle
+    expect(p.flags.find((f) => f.name === 'column')!.type).toBe('bool') // --[no-]column[=<style>]
+
+    const n = p.flags.find((f) => f.name === 'n')! // -n[<n>] short-only
+    expect(n.singleDash).toBe(true)
+    expect(n.type).toBe('int')
+  })
+
+  it('does not create bogus children from the synopsis or flag descriptions', () => {
+    const names = p.children.map((c) => c.name)
+    expect(names).not.toContain('or')
+    expect(names).not.toContain('tag') // from the "tag message" description line
+    expect(names).not.toContain('git')
+    expect(p.children).toHaveLength(0)
+  })
+
+  it('drops the usage block from the long description', () => {
+    expect(p.long).not.toContain('usage: git tag')
+  })
+
+  it('extracts the usage line', () => {
+    expect(p.usage).toContain('git tag')
+  })
+})
+
+describe('looksLikeManPage', () => {
+  it('detects nroff man-page output (git subcommand --help)', () => {
+    expect(looksLikeManPage('GIT-TAG(1)                        Git Manual                        GIT-TAG(1)\n')).toBe(true)
+    expect(looksLikeManPage('GIT-CHECKOUT(1)            Git Manual            GIT-CHECKOUT(1)\n')).toBe(true)
+  })
+  it('does not misfire on cobra/yargs usage dumps', () => {
+    expect(looksLikeManPage('My CLI does things\n\nUsage:\n  myapp [command]\n')).toBe(false)
+    expect(looksLikeManPage('USAGE\n  myapp [command]\n')).toBe(false)
+    expect(looksLikeManPage(fx('git-root.txt'))).toBe(false)
+    expect(looksLikeManPage(fx('git-tag.txt'))).toBe(false)
+  })
+})
+
+describe('buildHelpArgs - help flag override', () => {
+  it('defaults to --help', () => {
+    expect(buildHelpArgs('/bin/git', ['tag']).args).toEqual(['tag', '--help'])
+  })
+  it('accepts -h for the man-page retry', () => {
+    expect(buildHelpArgs('/bin/git', ['tag'], '-h').args).toEqual(['tag', '-h'])
   })
 })
 

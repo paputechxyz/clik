@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type { CommandNode } from '../../../shared/types'
-import { useAppStore } from '../store/useAppStore'
+import { useAppStore, isRunnable } from '../store/useAppStore'
 import { useLayoutStore } from '../store/useLayoutStore'
 import { FlagPanel } from './FlagPanel'
 import { Resizer } from './Resizer'
-import { ChevronLeftIcon, ChevronRightIcon, PlusIcon, RefreshIcon } from './icons'
+import { ChevronLeftIcon, ChevronRightIcon, PasteIcon, PlusIcon, RefreshIcon } from './icons'
 
 interface Column {
   items: CommandNode[]
@@ -119,7 +119,7 @@ export function ColumnNavigator({ onAddCommand }: { onAddCommand: () => void }):
           title="Import a command string (parses flags into the UI)"
           onClick={() => setImportOpen((v) => !v)}
         >
-          <PlusIcon />
+          <PasteIcon />
         </button>
         <button
           className="icon-btn small"
@@ -290,7 +290,7 @@ export function ColumnNavigator({ onAddCommand }: { onAddCommand: () => void }):
       if (!next) break
       node = next
     }
-    if (!node.isGroup) {
+    if (isRunnable(node)) {
       flagsTitle = selection.length > 0 ? selection.join(' ') : tree.binaryName
     }
   }

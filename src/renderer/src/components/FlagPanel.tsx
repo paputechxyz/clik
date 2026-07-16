@@ -1,5 +1,5 @@
 import type { CommandNode } from '../../../shared/types'
-import { useAppStore } from '../store/useAppStore'
+import { useAppStore, isRunnable } from '../store/useAppStore'
 import { buildArgv, commandPreviewTokens, configSignature, shellSplit } from '../lib/buildArgv'
 import { FlagField } from './FlagWidgets'
 import { BookmarkIcon, PlayIcon } from './icons'
@@ -27,8 +27,8 @@ export function FlagPanel(): JSX.Element {
     node = next
   }
 
-  if (node.isGroup) {
-    return <EmptyFlags text="Select a leaf command to edit its flags." />
+  if (!isRunnable(node)) {
+    return <EmptyFlags text="This command has no flags — pick a subcommand." />
   }
 
   const tokens = commandPreviewTokens(
