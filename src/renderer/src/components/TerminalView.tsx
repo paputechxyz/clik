@@ -243,6 +243,22 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
     container.addEventListener('mousedown', onDown)
     window.addEventListener('mouseup', onUp)
 
+    // Shift+Enter → insert a newline WITHOUT submitting. Intercept on the
+    // container in capture phase so the keydown never reaches xterm's own input
+    // path (xterm.js 6 still queues a `\r` for Enter even when
+    // attachCustomKeyEventHandler returns false, which would submit the line).
+    // Send the Kitty keyboard protocol sequence for Shift+Enter
+    // (`ESC [ 1 3 ; 2 u`): opencode (and any Bubble Tea / modern TUI) binds
+    // `shift+return` to `input_newline` and recognises this sequence; plain
+    // bash/zsh line editors ignore it. Plain Enter is untouched.
+    const onShiftEnter = (e: KeyboardEvent): void => {
+      if (e.key !== 'Enter' || !e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return
+      e.preventDefault()
+      e.stopPropagation()
+      if (!restoringRef.current) window.clik.pty.input(run.id, '\x1b[13;2u')
+    }
+    container.addEventListener('keydown', onShiftEnter, true)
+
     const ro = new ResizeObserver(() => {
       try {
         fit.fit()
@@ -255,6 +271,7 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
     return () => {
       ro.disconnect()
       container.removeEventListener('mousedown', onDown)
+      container.removeEventListener('keydown', onShiftEnter, true)
       window.removeEventListener('mouseup', onUp)
       allDecosRef.current?.dispose()
       activeDecoRef.current?.dispose()

@@ -18,6 +18,7 @@ export interface EditKeyInput {
   metaKey: boolean
   altKey: boolean
   ctrlKey: boolean
+  shiftKey: boolean
   key: string
 }
 
@@ -25,6 +26,10 @@ export interface EditKeyInput {
  * Map a macOS editing combo to the readline/zsh byte string it should produce,
  * or `null` to let xterm handle the key normally (plain arrows, history, typed
  * characters, the Cmd+F search shortcut, and raw Ctrl combos all fall through).
+ *
+ * Bindings mirror the zsh defaults (`bindkey -e`): ESC b/f = word move,
+ * ESC DEL = backward-kill-word, ESC d = kill-word, Ctrl-A/E = line start/end,
+ * Ctrl-U = kill-whole-line, Ctrl-K = kill-line.
  */
 export function translateEditKey(e: EditKeyInput): string | null {
   if (e.ctrlKey) return null

@@ -5,47 +5,51 @@ const ESC = '\x1b'
 
 describe('translateEditKey', () => {
   it('Option+Left/Right move by word', () => {
-    expect(translateEditKey({ metaKey: false, altKey: true, ctrlKey: false, key: 'ArrowLeft' })).toBe(ESC + 'b')
-    expect(translateEditKey({ metaKey: false, altKey: true, ctrlKey: false, key: 'ArrowRight' })).toBe(ESC + 'f')
+    expect(translateEditKey({ metaKey: false, altKey: true, ctrlKey: false, shiftKey: false, key: 'ArrowLeft' })).toBe(ESC + 'b')
+    expect(translateEditKey({ metaKey: false, altKey: true, ctrlKey: false, shiftKey: false, key: 'ArrowRight' })).toBe(ESC + 'f')
   })
 
   it('Cmd+Left/Right jump to line start/end', () => {
-    expect(translateEditKey({ metaKey: true, altKey: false, ctrlKey: false, key: 'ArrowLeft' })).toBe('\x01')
-    expect(translateEditKey({ metaKey: true, altKey: false, ctrlKey: false, key: 'ArrowRight' })).toBe('\x05')
+    expect(translateEditKey({ metaKey: true, altKey: false, ctrlKey: false, shiftKey: false, key: 'ArrowLeft' })).toBe('\x01')
+    expect(translateEditKey({ metaKey: true, altKey: false, ctrlKey: false, shiftKey: false, key: 'ArrowRight' })).toBe('\x05')
   })
 
   it('Option+Backspace deletes the previous word', () => {
-    expect(translateEditKey({ metaKey: false, altKey: true, ctrlKey: false, key: 'Backspace' })).toBe(ESC + '\x7f')
+    expect(translateEditKey({ metaKey: false, altKey: true, ctrlKey: false, shiftKey: false, key: 'Backspace' })).toBe(ESC + '\x7f')
   })
 
   it('Cmd+Backspace clears the line', () => {
-    expect(translateEditKey({ metaKey: true, altKey: false, ctrlKey: false, key: 'Backspace' })).toBe('\x15')
+    expect(translateEditKey({ metaKey: true, altKey: false, ctrlKey: false, shiftKey: false, key: 'Backspace' })).toBe('\x15')
   })
 
   it('Option+Delete forward-kills a word', () => {
-    expect(translateEditKey({ metaKey: false, altKey: true, ctrlKey: false, key: 'Delete' })).toBe(ESC + 'd')
+    expect(translateEditKey({ metaKey: false, altKey: true, ctrlKey: false, shiftKey: false, key: 'Delete' })).toBe(ESC + 'd')
   })
 
   it('Cmd+Delete kills to end of line', () => {
-    expect(translateEditKey({ metaKey: true, altKey: false, ctrlKey: false, key: 'Delete' })).toBe('\x0b')
+    expect(translateEditKey({ metaKey: true, altKey: false, ctrlKey: false, shiftKey: false, key: 'Delete' })).toBe('\x0b')
+  })
+
+  it('returns null for Shift+Enter (handled by DOM-level intercept, not here)', () => {
+    expect(translateEditKey({ metaKey: false, altKey: false, ctrlKey: false, shiftKey: true, key: 'Enter' })).toBeNull()
   })
 
   it('returns null for unmodified keys (xterm handles them)', () => {
-    expect(translateEditKey({ metaKey: false, altKey: false, ctrlKey: false, key: 'ArrowLeft' })).toBeNull()
-    expect(translateEditKey({ metaKey: false, altKey: false, ctrlKey: false, key: 'ArrowRight' })).toBeNull()
-    expect(translateEditKey({ metaKey: false, altKey: false, ctrlKey: false, key: 'Backspace' })).toBeNull()
-    expect(translateEditKey({ metaKey: false, altKey: false, ctrlKey: false, key: 'a' })).toBeNull()
-    expect(translateEditKey({ metaKey: false, altKey: false, ctrlKey: false, key: 'Enter' })).toBeNull()
+    expect(translateEditKey({ metaKey: false, altKey: false, ctrlKey: false, shiftKey: false, key: 'ArrowLeft' })).toBeNull()
+    expect(translateEditKey({ metaKey: false, altKey: false, ctrlKey: false, shiftKey: false, key: 'ArrowRight' })).toBeNull()
+    expect(translateEditKey({ metaKey: false, altKey: false, ctrlKey: false, shiftKey: false, key: 'Backspace' })).toBeNull()
+    expect(translateEditKey({ metaKey: false, altKey: false, ctrlKey: false, shiftKey: false, key: 'a' })).toBeNull()
+    expect(translateEditKey({ metaKey: false, altKey: false, ctrlKey: false, shiftKey: false, key: 'Enter' })).toBeNull()
   })
 
   it('returns null for Cmd+F so the search handler owns it', () => {
-    expect(translateEditKey({ metaKey: true, altKey: false, ctrlKey: false, key: 'f' })).toBeNull()
+    expect(translateEditKey({ metaKey: true, altKey: false, ctrlKey: false, shiftKey: false, key: 'f' })).toBeNull()
   })
 
   it('does not shadow raw Ctrl combos (e.g. Ctrl+C, Ctrl+A)', () => {
-    expect(translateEditKey({ metaKey: false, altKey: false, ctrlKey: true, key: 'c' })).toBeNull()
-    expect(translateEditKey({ metaKey: false, altKey: false, ctrlKey: true, key: 'a' })).toBeNull()
-    expect(translateEditKey({ metaKey: false, altKey: true, ctrlKey: true, key: 'ArrowLeft' })).toBeNull()
+    expect(translateEditKey({ metaKey: false, altKey: false, ctrlKey: true, shiftKey: false, key: 'c' })).toBeNull()
+    expect(translateEditKey({ metaKey: false, altKey: false, ctrlKey: true, shiftKey: false, key: 'a' })).toBeNull()
+    expect(translateEditKey({ metaKey: false, altKey: true, ctrlKey: true, shiftKey: false, key: 'ArrowLeft' })).toBeNull()
   })
 })
 
