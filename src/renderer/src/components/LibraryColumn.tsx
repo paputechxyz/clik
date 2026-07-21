@@ -565,7 +565,10 @@ function SavedCommandRow({
           <button
             className="lib-item-x"
             title="Inject into terminal"
-            onClick={() => onInject(item)}
+            onClick={(e) => {
+              e.currentTarget.blur()
+              onInject(item)
+            }}
           >
             <InjectIcon />
           </button>

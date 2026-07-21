@@ -589,6 +589,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     const cmd = item.rawCommand ?? item.preview
     window.clik.pty.input(target.id, cmd)
     set({ activeRunId: target.id })
+    // Move focus off the inject button and into the terminal so the next
+    // keystroke (Enter to submit the injected line) goes to the PTY instead
+    // of re-triggering the button. rAF lets a freshly-opened tab's terminal
+    // mount first; an already-active tab's terminal is already in the DOM.
+    requestAnimationFrame(() => {
+      const ta = document.querySelector<HTMLElement>('.term-host .xterm-helper-textarea')
+      ta?.focus()
+    })
   },
 
   removeSaved(id) {
