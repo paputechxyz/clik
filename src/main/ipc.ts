@@ -47,22 +47,36 @@ export function registerIpc(getWin: () => BrowserWindow | null): IpcCleanup {
       }
     }
 
+    // Wait for the startup shell-env capture so the discover spawn inherits
+    // the user's real PATH (e.g. node for npm's #!/usr/bin/env node shebang).
+    await shellEnv.whenReady()
+
+    const env = shellEnv.current
     const tree = await discoverTree(binaryPath, (p) => {
       e.sender.send('cli:discover:progress', { binaryPath, ...p })
-    })
+    }, env)
 
     try {
       const st = fs.statSync(binaryPath)
-      treeCache.set(binaryPath, st.mtimeMs, tree)
+      // A tree with zero children almost always means discovery silently
+      // failed (broken spawn, missing runtime, unparseable help). Don't
+      // cache it — next launch should retry instead of returning the
+      // poisoned result forever.
+      if (tree.root.children.length > 0) {
+        treeCache.set(binaryPath, st.mtimeMs, tree)
+      } else {
+        console.warn(`[discover] ${nodePath.basename(binaryPath)} — not caching (0 children)`)
+      }
     } catch {
       // binary vanished or unstatable; skip caching
     }
 
     return tree
   })
-  ipcMain.handle('cli:discover-command', (_e, binaryPath: string, cmdPath: string[]): Promise<CommandNode> =>
-    discoverCommand(binaryPath, cmdPath)
-  )
+  ipcMain.handle('cli:discover-command', async (_e, binaryPath: string, cmdPath: string[]): Promise<CommandNode> => {
+    await shellEnv.whenReady()
+    return discoverCommand(binaryPath, cmdPath, shellEnv.current)
+  })
 
   ipcMain.handle('dialog:pickBinary', async () => {
     const win = getWin()

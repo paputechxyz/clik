@@ -652,10 +652,15 @@ export function looksLikeManPage(text: string): boolean {
   return /[A-Z][A-Z0-9-]+\(\d+[A-Za-z]*\)/.test(head)
 }
 
-function runHelpArgs(binaryPath: string, cmdPath: string[], helpFlag: string): Promise<string> {
+function runHelpArgs(
+  binaryPath: string,
+  cmdPath: string[],
+  helpFlag: string,
+  env: Record<string, string>
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const { file, args } = buildHelpArgs(binaryPath, cmdPath, helpFlag)
-    const child = spawn(file, args, { shell: false })
+    const child = spawn(file, args, { shell: false, env })
     let out = ''
     let settled = false
     const label = cmdPath.length ? ` ${cmdPath.join(' ')}` : ''
@@ -699,11 +704,11 @@ function runHelpArgs(binaryPath: string, cmdPath: string[], helpFlag: string): P
   })
 }
 
-function runHelp(binaryPath: string, cmdPath: string[]): Promise<string> {
-  return runHelpArgs(binaryPath, cmdPath, '--help').then(async (out) => {
+function runHelp(binaryPath: string, cmdPath: string[], env: Record<string, string>): Promise<string> {
+  return runHelpArgs(binaryPath, cmdPath, '--help', env).then(async (out) => {
     if (looksLikeManPage(out)) {
       try {
-        const short = await runHelpArgs(binaryPath, cmdPath, '-h')
+        const short = await runHelpArgs(binaryPath, cmdPath, '-h', env)
         if (short.trim().length > 0) return short
       } catch {
         // keep the man-page output; parseHelp will do its best
@@ -726,9 +731,10 @@ async function buildNode(
   depth = 0,
   rootHelp: string | undefined,
   parentHelp: string | undefined,
-  onTopChildDone?: (childName: string, done: number, total: number) => void
+  onTopChildDone?: (childName: string, done: number, total: number) => void,
+  env: Record<string, string> = process.env as Record<string, string>
 ): Promise<CommandNode> {
-  const help = await runHelp(binaryPath, cmdPath)
+  const help = await runHelp(binaryPath, cmdPath, env)
   const baseName = path.basename(binaryPath)
   const prefixPath = cmdPath.length === 0 ? [baseName] : [baseName, ...cmdPath]
   const parsed = parseHelp(help, prefixPath)
@@ -757,7 +763,7 @@ async function buildNode(
       // can't be loaded, …) must not abort the whole tree — skip and continue.
       try {
         children.push(
-          await buildNode(binaryPath, [...cmdPath, c.name], c.short, depth + 1, nextRoot, help, onTopChildDone)
+          await buildNode(binaryPath, [...cmdPath, c.name], c.short, depth + 1, nextRoot, help, onTopChildDone, env)
         )
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
@@ -787,7 +793,8 @@ function countNodes(n: CommandNode): number {
 
 export async function discoverTree(
   binaryPath: string,
-  onProgress?: (p: DiscoverProgress) => void
+  onProgress?: (p: DiscoverProgress) => void,
+  env: Record<string, string> = process.env as Record<string, string>
 ): Promise<CommandTree> {
   const base = path.basename(binaryPath)
   console.log(`[discover] ${base} — starting (recursive --help discovery)`)
@@ -806,7 +813,8 @@ export async function discoverTree(
             console.log(`[discover] ${base} — ${done}/${total} (${pct}%) ${current}`)
             onProgress({ done, total, current })
           }
-        : undefined
+        : undefined,
+      env
     )
     const sec = ((Date.now() - t0) / 1000).toFixed(1)
     console.log(`[discover] ${base} — done in ${sec}s (${countNodes(root)} nodes)`)
@@ -819,8 +827,12 @@ export async function discoverTree(
   }
 }
 
-export async function discoverCommand(binaryPath: string, cmdPath: string[]): Promise<CommandNode> {
-  return buildNode(binaryPath, cmdPath, '', 0, undefined, undefined)
+export async function discoverCommand(
+  binaryPath: string,
+  cmdPath: string[],
+  env: Record<string, string> = process.env as Record<string, string>
+): Promise<CommandNode> {
+  return buildNode(binaryPath, cmdPath, '', 0, undefined, undefined, undefined, env)
 }
 
 export const cobraAdapter: CliAdapter = { name: 'cobra', discover: discoverTree }

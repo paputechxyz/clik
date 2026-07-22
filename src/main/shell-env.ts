@@ -107,4 +107,17 @@ export class ShellEnvCache {
       })
     return this.inflight
   }
+
+  // Resolve once the initial capture has settled (success or failure).
+  // Does NOT trigger a new capture if one isn't running — callers that need
+  // an up-to-date env should use refresh(). Use this to gate work that just
+  // needs to wait for startup capture so it doesn't race the login shell.
+  whenReady(): Promise<void> {
+    return this.inflight
+      ? this.inflight.then(
+          () => undefined,
+          () => undefined
+        )
+      : Promise.resolve()
+  }
 }

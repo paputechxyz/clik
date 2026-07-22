@@ -238,6 +238,26 @@ export function ColumnNavigator({ onAddCommand }: { onAddCommand: () => void }):
       )
     })
   } else if (tree) {
+    if (tree.root.children.length === 0) {
+      panels.push({
+        key: 'empty-tree',
+        title: 'Command',
+        muted: true,
+        body: (
+          <>
+            <div className="pane-empty">
+              No commands found.
+              <div className="discover-hint">
+                Discovery ran but parsed nothing. The CLI may need a runtime on PATH (node, python, …) or use a help format the adapter can&apos;t read.
+              </div>
+            </div>
+            <button className="add-command" onClick={() => void refreshEntry()} title="Re-run discovery">
+              <RefreshIcon /> Re-analyze
+            </button>
+          </>
+        )
+      })
+    }
     cmdColumns.forEach((col, i) => {
       panels.push({
         key: `col-${i}`,
