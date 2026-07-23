@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import type { CommandTree, ClikApi, Folder, LibraryData, SavedCommandItem, HistoryItem } from '../../../../shared/types'
-import { useAppStore, isRunnable } from '../useAppStore'
+import { useAppStore, isRunnable, type Run } from '../useAppStore'
 
 function fakeTree(label: string): CommandTree {
   return {
@@ -445,5 +445,58 @@ describe('runnable group commands (group with its own flags)', () => {
     const fv = useAppStore.getState().flagValues
     expect('list' in fv).toBe(true)
     expect(fv.list).toBe(false) // bool default false
+  })
+})
+
+describe('PTY data batching (handlePtyEvent)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    useAppStore.setState({
+      runs: [
+        { id: 'r1', title: 't', preview: 't', mode: 'shell', output: '', status: 'running', code: null, startedAt: 0 }
+      ] as Run[],
+      activeRunId: 'r1'
+    })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    // Clear any leftover pending flush timer
+    useAppStore.getState().flushOutput()
+  })
+
+  it('buffers data chunks without updating run.output immediately', () => {
+    const s = useAppStore.getState()
+    s.handlePtyEvent({ id: 'r1', channel: 'data', payload: 'hello ' })
+    s.handlePtyEvent({ id: 'r1', channel: 'data', payload: 'world' })
+    // Not flushed yet — output should still be empty
+    expect(useAppStore.getState().runs[0].output).toBe('')
+  })
+
+  it('flushes buffered output after the timer fires', () => {
+    const s = useAppStore.getState()
+    s.handlePtyEvent({ id: 'r1', channel: 'data', payload: 'hello ' })
+    s.handlePtyEvent({ id: 'r1', channel: 'data', payload: 'world' })
+    vi.advanceTimersByTime(100)
+    expect(useAppStore.getState().runs[0].output).toBe('hello world')
+  })
+
+  it('flushes pending data immediately on exit', () => {
+    const s = useAppStore.getState()
+    s.handlePtyEvent({ id: 'r1', channel: 'data', payload: 'final' })
+    s.handlePtyEvent({ id: 'r1', channel: 'exit', payload: { code: 0 } })
+    expect(useAppStore.getState().runs[0].output).toBe('final')
+    expect(useAppStore.getState().runs[0].status).toBe('exited')
+  })
+
+  it('clearRun drops the pending buffer so stale data does not reappear', () => {
+    const ptyInput = vi.fn()
+    installApi({ pty: { input: ptyInput } } as unknown as Partial<ClikApi>)
+    const s = useAppStore.getState()
+    s.handlePtyEvent({ id: 'r1', channel: 'data', payload: 'pending' })
+    useAppStore.getState().clearRun('r1')
+    vi.advanceTimersByTime(100)
+    // output was cleared and the buffered 'pending' chunk was discarded
+    expect(useAppStore.getState().runs[0].output).toBe('')
   })
 })

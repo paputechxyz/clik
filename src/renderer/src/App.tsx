@@ -6,6 +6,7 @@ import { LibraryColumn } from './components/LibraryColumn'
 import { SettingsModal } from './components/SettingsModal'
 import { RunTabs } from './components/RunTabs'
 import { Resizer } from './components/Resizer'
+import { ptyDataBus } from './lib/pty-events'
 import { ChevronUpIcon, GearIcon } from './components/icons'
 import './types'
 
@@ -28,7 +29,12 @@ export function App(): JSX.Element {
   }, [loadEntries, loadLibrary])
 
   useEffect(() => {
-    const offPty = window.clik.pty.onEvent(handlePtyEvent)
+    const offPty = window.clik.pty.onEvent((e) => {
+      if (e.channel === 'data' && typeof e.payload === 'string') {
+        ptyDataBus.dispatch(e.id, e.payload)
+      }
+      handlePtyEvent(e)
+    })
     const offMenu = window.clik.onMenu((action) => {
       if (action === 'new-tab') {
         void openShellTab()

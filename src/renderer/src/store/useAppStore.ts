@@ -37,6 +37,36 @@ export interface Run {
 const MAX_OUTPUT = 1_000_000
 const MAX_HISTORY = 200
 
+// PTY data is written to xterm directly via ptyDataBus (see TerminalView), so
+// run.output is only consumed on tab-switch remount + in-terminal search. We
+// batch the accumulation here: chunks land in outputBuffers and flush to the
+// store on a timer, avoiding a per-event zustand update + React re-render +
+// 1MB string slice for chatty TUIs that emit hundreds of chunks/sec.
+const FLUSH_INTERVAL = 80
+const outputBuffers = new Map<string, string>()
+let flushTimer: ReturnType<typeof setTimeout> | null = null
+
+function bufferOutputChunk(runId: string, chunk: string): void {
+  outputBuffers.set(runId, (outputBuffers.get(runId) ?? '') + chunk)
+  if (flushTimer === null) {
+    flushTimer = setTimeout(flushOutputBuffers, FLUSH_INTERVAL)
+  }
+}
+
+function flushOutputBuffers(): void {
+  flushTimer = null
+  if (outputBuffers.size === 0) return
+  const entries = new Map(outputBuffers)
+  outputBuffers.clear()
+  useAppStore.setState((s) => ({
+    runs: s.runs.map((r) => {
+      const chunk = entries.get(r.id)
+      if (!chunk) return r
+      return { ...r, output: (r.output + chunk).slice(-MAX_OUTPUT) }
+    })
+  }))
+}
+
 // ---- Flag persistence (Task 5) -------------------------------------------
 const PERSIST_KEY = 'clik-session-v1'
 
@@ -232,6 +262,7 @@ interface AppState {
   setActiveRun: (id: string) => void
   clearRun: (id: string) => void
   handlePtyEvent: (e: PtyEvent) => void
+  flushOutput: () => void
   saveCurrentCommand: () => void
   addRawCommand: (command: string) => void
   injectCommand: (item: SavedCommandItem) => Promise<void>
@@ -473,6 +504,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   async closeRun(id) {
+    outputBuffers.delete(id)
     const run = get().runs.find((r) => r.id === id)
     if (run && run.status === 'running') await window.clik.pty.kill(id)
     const runs = get().runs.filter((r) => r.id !== id)
@@ -488,6 +520,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   clearRun(id) {
+    outputBuffers.delete(id)
     set((s) => ({
       runs: s.runs.map((r) => (r.id === id ? { ...r, output: '' } : r))
     }))
@@ -811,20 +844,24 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   handlePtyEvent(e) {
-    set((s) => ({
-      runs: s.runs.map((r) => {
-        if (r.id !== e.id) return r
-        if (e.channel === 'data') {
-          const chunk = typeof e.payload === 'string' ? e.payload : ''
-          return { ...r, output: (r.output + chunk).slice(-MAX_OUTPUT) }
-        }
-        if (e.channel === 'exit') {
-          const p = e.payload as { code: number }
-          return { ...r, status: 'exited', code: p.code }
-        }
-        return r
-      })
-    }))
+    if (e.channel === 'data') {
+      const chunk = typeof e.payload === 'string' ? e.payload : ''
+      if (chunk) bufferOutputChunk(e.id, chunk)
+      return
+    }
+    if (e.channel === 'exit') {
+      // Flush any pending data before recording the exit so the final output
+      // is visible in the scrollback snapshot.
+      flushOutputBuffers()
+      const p = e.payload as { code: number }
+      set((s) => ({
+        runs: s.runs.map((r) => (r.id === e.id ? { ...r, status: 'exited', code: p.code } : r))
+      }))
+    }
+  },
+
+  flushOutput() {
+    flushOutputBuffers()
   }
 }))
 

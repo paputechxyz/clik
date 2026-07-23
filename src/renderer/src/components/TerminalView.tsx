@@ -4,7 +4,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import type { Run } from '../store/useAppStore'
-import { computeWriteDelta } from '../lib/term-delta'
+import { ptyDataBus } from '../lib/pty-events'
 import { translateEditKey, computeCursorDelta } from '../lib/term-keys'
 import { ChevronUpIcon, ChevronDownIcon, CloseIcon } from './icons'
 
@@ -268,7 +268,17 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
     })
     ro.observe(container)
 
+    // Write PTY data straight to xterm. Going through the store's run.output
+    // for every chunk caused (1) a per-event React re-render + 1MB string
+    // slice, and (2) a silent display freeze once output hit MAX_OUTPUT and
+    // the length-based delta returned 'none' forever. The store still
+    // accumulates output (batched) for scrollback restore on tab switch.
+    const unsubBus = ptyDataBus.subscribe(run.id, (data) => {
+      term.write(data)
+    })
+
     return () => {
+      unsubBus()
       ro.disconnect()
       container.removeEventListener('mousedown', onDown)
       container.removeEventListener('keydown', onShiftEnter, true)
@@ -284,20 +294,19 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Live PTY data arrives via ptyDataBus (subscribed in the mount effect) and
+  // is written directly to xterm. run.output is only used for the initial
+  // scrollback restore (mount) and detecting an explicit clear (clearRun sets
+  // output to ''). We deliberately do NOT replay batched output growth here —
+  // that would duplicate data already shown via the bus.
   useEffect(() => {
     const term = termRef.current
     if (!term || !ready) return
-    const plan = computeWriteDelta(writtenRef.current, run.output)
-    if (plan.kind === 'full') {
+    if (run.output.length === 0 && writtenRef.current > 0) {
       restoringRef.current = true
       term.reset()
-      term.write(plan.text, () => {
-        restoringRef.current = false
-      })
-      writtenRef.current = plan.written
-    } else if (plan.kind === 'delta') {
-      term.write(plan.text)
-      writtenRef.current = plan.written
+      writtenRef.current = 0
+      restoringRef.current = false
     }
   }, [run.output, ready])
 
