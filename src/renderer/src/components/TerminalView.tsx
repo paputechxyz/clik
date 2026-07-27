@@ -133,20 +133,38 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
     if (!container) return
     // Read the terminal background from the shared CSS token so the xterm
     // canvas always matches the .term-host padding region (no visible frame).
-    const termBg = getComputedStyle(container).getPropertyValue('--term-bg').trim() || '#1c1d21'
+    const termBg = getComputedStyle(container).getPropertyValue('--term-bg').trim() || '#282a36'
     const term = new Terminal({
       fontFamily: "'SF Mono', 'JetBrains Mono', Menlo, monospace",
       fontSize: 12,
       lineHeight: 1.3,
       theme: {
-        // Matched to the polished design tokens (--term-bg / --fg / --accent).
-        // xterm's theme API takes RGB strings, so these are the sRGB
-        // equivalents of the OKLCH tokens in styles.css.
+        // Dracula palette (https://draculatheme.com). background reads the
+        // shared --term-bg token so the canvas and .term-host padding stay
+        // seamless. The ANSI blue slot is remapped from Dracula's purple to a
+        // cobalt matching CLIk's --accent, threading the app's identity
+        // through the palette; everything else is canonical Dracula.
         background: termBg,
-        foreground: '#dcdde0',
+        foreground: '#f8f8f2',
         cursor: '#4a78f0',
         cursorAccent: '#ffffff',
-        selectionBackground: '#2a3a5c'
+        selectionBackground: '#44475a',
+        black: '#21222c',
+        red: '#ff5555',
+        green: '#50fa7b',
+        yellow: '#f1fa8c',
+        blue: '#5b8cff',
+        magenta: '#ff79c6',
+        cyan: '#8be9fd',
+        white: '#f8f8f2',
+        brightBlack: '#6272a4',
+        brightRed: '#ff6e67',
+        brightGreen: '#69ff94',
+        brightYellow: '#ffffa5',
+        brightBlue: '#7aa6ff',
+        brightMagenta: '#ff92d0',
+        brightCyan: '#a4ffff',
+        brightWhite: '#ffffff'
       },
       scrollback: 5000,
       convertEol: true,

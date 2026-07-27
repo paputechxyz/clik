@@ -18,8 +18,10 @@
   --inset:         oklch(13% 0.006 255);    /* inputs / wells (deeper than canvas) */
 
   /* Terminal body color — shared with the xterm.js theme (TerminalView.tsx)
-     so the host padding blends seamlessly with the rendered cells. */
-  --term-bg:       #1c1d21;
+     so the host padding blends seamlessly with the rendered cells. Dracula's
+     signature dark-purple background; the full Dracula ANSI palette (with a
+     cobalt-blue remap) lives in TerminalView.tsx. */
+  --term-bg:       #282a36;
 
   /* ---- Text ------------------------------------------------------------ */
   --fg:            oklch(94% 0.003 255);
