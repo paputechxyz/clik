@@ -77,7 +77,7 @@ export interface PtyEvent {
   payload: unknown
 }
 
-export type MenuAction = 'new-tab' | 'close-tab' | 'clear-tab'
+export type MenuAction = 'new-tab' | 'close-tab' | 'clear-tab' | 'toggle-library' | 'toggle-terminal'
 
 export type UpdateState =
   | 'unavailable'

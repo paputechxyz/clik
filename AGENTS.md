@@ -86,7 +86,7 @@ CLIk also builds and runs on Windows x64. The platform-specific behavior:
 - `pty:open` (PtyOpenRequest) -> id / `pty:openShell` -> id (login `$SHELL -l` at homedir)
 - `pty:input` / `pty:resize` (send, fire-and-forget — one per keystroke/resize)
 - `pty:kill` (id) ; events stream via `pty:event` {id, channel:'data'|'exit', payload}
-- `menu:action` (main -> renderer) 'new-tab' | 'close-tab' | 'clear-tab' (Cmd+T / Cmd+W / Cmd+K)
+- `menu:action` (main -> renderer) 'new-tab' | 'close-tab' | 'clear-tab' | 'toggle-library' | 'toggle-terminal' (Cmd+T / Cmd+W / Cmd+K / Cmd+B / Cmd+L)
 
 ## Terminal model
 

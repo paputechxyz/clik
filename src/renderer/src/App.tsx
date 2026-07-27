@@ -17,6 +17,7 @@ export function App(): JSX.Element {
   const openShellTab = useAppStore((s) => s.openShellTab)
   const closeRun = useAppStore((s) => s.closeRun)
   const clearRun = useAppStore((s) => s.clearRun)
+  const toggleOutputExpanded = useLayoutStore((s) => s.toggleOutputExpanded)
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -44,13 +45,15 @@ export function App(): JSX.Element {
       } else if (action === 'clear-tab') {
         const id = useAppStore.getState().activeRunId
         if (id) clearRun(id)
+      } else if (action === 'toggle-terminal') {
+        toggleOutputExpanded()
       }
     })
     return () => {
       offPty()
       offMenu()
     }
-  }, [handlePtyEvent, openShellTab, closeRun, clearRun])
+  }, [handlePtyEvent, openShellTab, closeRun, clearRun, toggleOutputExpanded])
 
   useEffect(() => {
     const el = bodyRef.current

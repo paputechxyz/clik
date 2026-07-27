@@ -128,6 +128,16 @@ export function LibraryColumn(): JSX.Element {
     saveLayout(merged)
   }
 
+  useEffect(() => {
+    const off = window.clik.onMenu((action) => {
+      if (action !== 'toggle-library') return
+      const next = !libraryCollapsed
+      setLibraryCollapsed(next)
+      persist({ libraryCollapsed: next })
+    })
+    return off
+  }, [libraryCollapsed, persist])
+
   const onDragWidth = (deltaPx: number): void => {
     setWidth((w) => {
       const next = Math.max(MIN_LIB_WIDTH, Math.min(MAX_LIB_WIDTH, w + deltaPx))

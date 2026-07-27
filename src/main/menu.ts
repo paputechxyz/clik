@@ -28,6 +28,16 @@ export function buildMenu(getWin: () => BrowserWindow | null): void {
           label: 'Clear Terminal',
           accelerator: 'CmdOrCtrl+K',
           click: () => send('clear-tab')
+        },
+        {
+          label: 'Toggle Library',
+          accelerator: 'CmdOrCtrl+B',
+          click: () => send('toggle-library')
+        },
+        {
+          label: 'Toggle Terminal',
+          accelerator: 'CmdOrCtrl+L',
+          click: () => send('toggle-terminal')
         }
       ]
     },
