@@ -118,6 +118,7 @@ export function registerIpc(getWin: () => BrowserWindow | null): IpcCleanup {
   ipcMain.handle('registry:add', (_e, entry: Omit<CliEntry, 'id'>) => registry.add(entry))
   ipcMain.handle('registry:update', (_e, entry: CliEntry) => registry.update(entry))
   ipcMain.handle('registry:remove', (_e, id: string) => registry.remove(id))
+  ipcMain.handle('registry:reorder', (_e, ids: string[]) => registry.reorder(ids))
 
   ipcMain.handle('library:get', () => library.get())
   ipcMain.handle('library:save', (_e, data: LibraryData) => {

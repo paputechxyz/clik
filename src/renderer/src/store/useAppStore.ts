@@ -251,6 +251,7 @@ interface AppState {
   addEntry: (entry: Omit<CliEntry, 'id'>) => Promise<void>
   updateEntry: (entry: CliEntry) => Promise<void>
   removeEntry: (id: string) => Promise<void>
+  reorderEntry: (fromIndex: number, toIndex: number) => void
   selectEntry: (id: string | null) => Promise<void>
   refreshEntry: (id?: string) => Promise<void>
   selectCommand: (depth: number, name: string) => void
@@ -710,6 +711,24 @@ export const useAppStore = create<AppState>((set, get) => ({
       folders.splice(toIndex, 0, moved)
       persistLibrary(s.saved, s.history, folders)
       return { folders }
+    })
+  },
+
+  reorderEntry(fromIndex, toIndex) {
+    set((s) => {
+      if (
+        fromIndex < 0 ||
+        fromIndex >= s.entries.length ||
+        toIndex < 0 ||
+        toIndex >= s.entries.length ||
+        fromIndex === toIndex
+      )
+        return {}
+      const entries = s.entries.slice()
+      const [moved] = entries.splice(fromIndex, 1)
+      entries.splice(toIndex, 0, moved)
+      void window.clik.registry.reorder(entries.map((e) => e.id))
+      return { entries }
     })
   },
 

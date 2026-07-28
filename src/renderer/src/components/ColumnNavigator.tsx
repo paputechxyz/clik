@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import type { CommandNode } from '../../../shared/types'
+import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react'
+import type { CliEntry, CommandNode } from '../../../shared/types'
 import { useAppStore, isRunnable } from '../store/useAppStore'
 import { useLayoutStore } from '../store/useLayoutStore'
 import { FlagPanel } from './FlagPanel'
@@ -78,12 +78,53 @@ export function ColumnNavigator({ onAddCommand }: { onAddCommand: () => void }):
   const selectCommand = useAppStore((s) => s.selectCommand)
   const refreshEntry = useAppStore((s) => s.refreshEntry)
   const importCommandString = useAppStore((s) => s.importCommandString)
+  const reorderEntry = useAppStore((s) => s.reorderEntry)
   const isBusy = !!selectedEntryId && (discovering || !!discoverError || !tree)
 
   const sectionRef = useRef<HTMLDivElement>(null)
   const [sectionWidth, setSectionWidth] = useState(0)
   const [importOpen, setImportOpen] = useState(false)
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [dropHint, setDropHint] = useState<{ id: string; edge: 'before' | 'after' } | null>(null)
   const typeAhead = useTypeAhead()
+
+  const endEntryDrag = (): void => {
+    setDragId(null)
+    setDropHint(null)
+  }
+  const onEntryDragStart = (e: DragEvent<HTMLLIElement>, entry: CliEntry): void => {
+    setDragId(entry.id)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', entry.id)
+  }
+  const onEntryDragOver = (e: DragEvent<HTMLLIElement>, entry: CliEntry): void => {
+    if (!dragId || dragId === entry.id) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    const rect = e.currentTarget.getBoundingClientRect()
+    const before = e.clientY < rect.top + rect.height / 2
+    setDropHint({ id: entry.id, edge: before ? 'before' : 'after' })
+  }
+  const onEntryDrop = (e: DragEvent<HTMLLIElement>, entry: CliEntry): void => {
+    if (!dragId || dragId === entry.id) {
+      endEntryDrag()
+      return
+    }
+    e.preventDefault()
+    e.stopPropagation()
+    const rect = e.currentTarget.getBoundingClientRect()
+    const before = e.clientY < rect.top + rect.height / 2
+    // Indices are computed on the array EXCLUDING the dragged item, so the
+    // splice in reorderEntry lands in the right slot (same trick as the
+    // library DnD).
+    const dest = entries.filter((en) => en.id !== dragId)
+    const targetIndex = dest.findIndex((en) => en.id === entry.id)
+    if (targetIndex !== -1) {
+      const fromIndex = entries.findIndex((en) => en.id === dragId)
+      reorderEntry(fromIndex, before ? targetIndex : targetIndex + 1)
+    }
+    endEntryDrag()
+  }
 
   useEffect(() => {
     const el = sectionRef.current
@@ -165,16 +206,26 @@ export function ColumnNavigator({ onAddCommand }: { onAddCommand: () => void }):
             )
           }
         >
-          {entries.map((e) => (
-            <li
-              key={e.id}
-              className={`entry-item${e.id === selectedEntryId ? ' selected' : ''}`}
-              onClick={() => void selectEntry(e.id)}
-            >
-              <span className="entry-name">{e.name}</span>
-              <span className="entry-path">{e.binaryPath}</span>
-            </li>
-          ))}
+          {entries.map((e) => {
+            const hint =
+              dropHint && dropHint.id === e.id ? ` drop-${dropHint.edge}` : ''
+            const dragging = dragId === e.id ? ' dragging' : ''
+            return (
+              <li
+                key={e.id}
+                className={`entry-item${e.id === selectedEntryId ? ' selected' : ''}${hint}${dragging}`}
+                draggable
+                onDragStart={(ev) => onEntryDragStart(ev, e)}
+                onDragOver={(ev) => onEntryDragOver(ev, e)}
+                onDrop={(ev) => onEntryDrop(ev, e)}
+                onDragEnd={endEntryDrag}
+                onClick={() => void selectEntry(e.id)}
+              >
+                <span className="entry-name">{e.name}</span>
+                <span className="entry-path">{e.binaryPath}</span>
+              </li>
+            )
+          })}
         </ul>
       </>
     )

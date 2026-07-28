@@ -163,6 +163,7 @@ export interface ClikApi {
     add: (entry: Omit<CliEntry, 'id'>) => Promise<CliEntry>
     update: (entry: CliEntry) => Promise<CliEntry>
     remove: (id: string) => Promise<void>
+    reorder: (ids: string[]) => Promise<void>
   }
   library: {
     get: () => Promise<LibraryData>

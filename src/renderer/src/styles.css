@@ -312,6 +312,11 @@ button { font-family: var(--font-ui); color: inherit; }
   font-size: var(--text-sm); color: var(--fg-muted);
   font-family: var(--font-mono); margin-top: 1px;
 }
+.entry-item[draggable="true"] { cursor: grab; }
+.entry-item[draggable="true"]:active { cursor: grabbing; }
+.entry-item.dragging { opacity: 0.4; }
+.entry-item.drop-before { box-shadow: inset 0 2px 0 0 var(--accent); }
+.entry-item.drop-after { box-shadow: inset 0 -2px 0 0 var(--accent); }
 
 /* ---- Output region + resizers ---------------------------------------- */
 .output-section { display: flex; flex-direction: column; min-height: 0; min-width: 0; }

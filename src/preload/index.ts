@@ -24,7 +24,8 @@ const api: ClikApi = {
     list: () => ipcRenderer.invoke('registry:list'),
     add: (entry) => ipcRenderer.invoke('registry:add', entry),
     update: (entry) => ipcRenderer.invoke('registry:update', entry),
-    remove: (id) => ipcRenderer.invoke('registry:remove', id)
+    remove: (id) => ipcRenderer.invoke('registry:remove', id),
+    reorder: (ids) => ipcRenderer.invoke('registry:reorder', ids)
   },
   library: {
     get: () => ipcRenderer.invoke('library:get'),

@@ -55,7 +55,8 @@ describe('store discovery cache + refresh', () => {
         list: async () => [],
         add: async (e) => ({ id: '1', ...e }),
         update: async (e) => e,
-        remove: async () => undefined
+        remove: async () => undefined,
+        reorder: async () => undefined
       }
     })
 
@@ -214,10 +215,56 @@ describe('library folders, move/reorder, migration behavior', () => {
     expect(useAppStore.getState().folders.map((f) => f.id)).toEqual(['b', 'c', 'a'])
   })
 
+  it('reorderEntry moves an entry and persists the new id order', () => {
+    const reorder = vi.fn<(ids: string[]) => Promise<void>>(async () => undefined)
+    installApi({
+      registry: {
+        list: async () => [],
+        add: async (e) => ({ id: '1', ...e }),
+        update: async (e) => e,
+        remove: async () => undefined,
+        reorder
+      }
+    })
+    useAppStore.setState({
+      entries: [
+        { id: 'a', name: 'A', binaryPath: '/bin/a', env: {} },
+        { id: 'b', name: 'B', binaryPath: '/bin/b', env: {} },
+        { id: 'c', name: 'C', binaryPath: '/bin/c', env: {} }
+      ]
+    })
+    useAppStore.getState().reorderEntry(0, 2)
+    expect(useAppStore.getState().entries.map((e) => e.id)).toEqual(['b', 'c', 'a'])
+    expect(reorder).toHaveBeenCalledWith(['b', 'c', 'a'])
+  })
+
+  it('reorderEntry ignores no-op moves (same index / out of bounds)', () => {
+    const reorder = vi.fn<(ids: string[]) => Promise<void>>(async () => undefined)
+    installApi({
+      registry: {
+        list: async () => [],
+        add: async (e) => ({ id: '1', ...e }),
+        update: async (e) => e,
+        remove: async () => undefined,
+        reorder
+      }
+    })
+    useAppStore.setState({
+      entries: [
+        { id: 'a', name: 'A', binaryPath: '/bin/a', env: {} },
+        { id: 'b', name: 'B', binaryPath: '/bin/b', env: {} }
+      ]
+    })
+    useAppStore.getState().reorderEntry(0, 0)
+    useAppStore.getState().reorderEntry(5, 1)
+    expect(reorder).not.toHaveBeenCalled()
+    expect(useAppStore.getState().entries.map((e) => e.id)).toEqual(['a', 'b'])
+  })
+
   it('removeEntry keeps saved + history for the removed CLI (R9, no purge)', async () => {
     const libSave = vi.fn<(d: LibraryData) => Promise<void>>(async () => undefined)
     installApi({
-      registry: { list: async () => [], add: async (e) => ({ id: '1', ...e }), update: async (e) => e, remove: async () => undefined },
+      registry: { list: async () => [], add: async (e) => ({ id: '1', ...e }), update: async (e) => e, remove: async () => undefined, reorder: async () => undefined },
       library: { get: async () => ({ saved: [], history: [], folders: [] }), save: libSave }
     })
     const item = saved('s1')
@@ -242,7 +289,8 @@ describe('library folders, move/reorder, migration behavior', () => {
         list: async () => [],
         add: async (e) => ({ id: 'fresh-id', ...e }), // registry.add → randomUUID
         update: async (e) => e,
-        remove: async () => undefined
+        remove: async () => undefined,
+        reorder: async () => undefined
       },
       library: { get: async () => ({ saved: [], history: [], folders: [] }), save: libSave }
     })
@@ -267,7 +315,8 @@ describe('library folders, move/reorder, migration behavior', () => {
         list: async () => [],
         add: async (e) => ({ id: 'fresh-id', ...e }),
         update: async (e) => e,
-        remove: async () => undefined
+        remove: async () => undefined,
+        reorder: async () => undefined
       },
       library: { get: async () => ({ saved: [], history: [], folders: [] }), save: async () => undefined }
     })
@@ -288,7 +337,8 @@ describe('library folders, move/reorder, migration behavior', () => {
         list: async () => [],
         add: async (e) => ({ id: 'fresh-id', ...e }),
         update: async (e) => e,
-        remove: async () => undefined
+        remove: async () => undefined,
+        reorder: async () => undefined
       },
       library: { get: async () => ({ saved: [], history: [], folders: [] }), save: async () => undefined }
     })

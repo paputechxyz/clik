@@ -44,4 +44,26 @@ export class Registry {
     this.entries = this.entries.filter((e) => e.id !== id)
     this.save()
   }
+
+  // Reorder entries to match the given id sequence. Unknown ids are ignored;
+  // any current entries missing from the sequence keep their relative order
+  // at the tail (so a partial list can't silently drop entries).
+  reorder(orderedIds: string[]): CliEntry[] {
+    const byId = new Map(this.entries.map((e) => [e.id, e]))
+    const next: CliEntry[] = []
+    const seen = new Set<string>()
+    for (const id of orderedIds) {
+      const e = byId.get(id)
+      if (e && !seen.has(id)) {
+        next.push(e)
+        seen.add(id)
+      }
+    }
+    for (const e of this.entries) {
+      if (!seen.has(e.id)) next.push(e)
+    }
+    this.entries = next
+    this.save()
+    return this.entries
+  }
 }
