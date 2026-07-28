@@ -7,6 +7,10 @@ type BaseEnvProvider = () => Record<string, string>
 
 export class PtyManager {
   private handles = new Map<string, pty.IPty>()
+  // Per-pty in-progress OSC 7 buffer (a sequence may be split across chunks).
+  private osc7Buffers = new Map<string, string>()
+  // Most recent working directory reported by any pty via OSC 7.
+  private lastCwd: string | null = null
   private disposed = false
 
   constructor(
@@ -19,6 +23,39 @@ export class PtyManager {
     this.emit(id, channel, payload)
   }
 
+  // Extract working-directory updates from OSC 7 escape sequences emitted by
+  // the shell (e.g. macOS /etc/zshrc_Apple_Terminal's update_terminal_cwd).
+  // Format: ESC ] 7 ; file://<host>/<path>  (BEL | ST). Path is percent-encoded.
+  private scanOsc7(id: string, data: string): void {
+    let buf = (this.osc7Buffers.get(id) ?? '') + data
+    const re = /\x1b\]7;file:\/\/([^\x07\x1b]*)(?:\x07|\x1b\\)/g
+    let lastEnd = 0
+    let m: RegExpExecArray | null
+    while ((m = re.exec(buf)) !== null) {
+      lastEnd = re.lastIndex
+      try {
+        const u = new URL('file://' + m[1])
+        if (u.pathname) this.lastCwd = decodeURIComponent(u.pathname)
+      } catch {
+        // malformed payload; ignore
+      }
+    }
+    const remaining = buf.slice(lastEnd)
+    const pending = remaining.lastIndexOf('\x1b]7;')
+    buf =
+      pending >= 0
+        ? remaining.slice(pending)
+        : remaining.endsWith('\x1b') || remaining.endsWith('\x1b]')
+          ? remaining.slice(-2)
+          : ''
+    if (buf.length > 8192) buf = ''
+    this.osc7Buffers.set(id, buf)
+  }
+
+  getLastCwd(): string | null {
+    return this.lastCwd
+  }
+
   open(req: PtyOpenRequest): string {
     const id = randomUUID()
     const p = pty.spawn(req.file, req.args ?? [], {
@@ -28,9 +65,13 @@ export class PtyManager {
       rows: req.rows ?? 24
     })
     this.handles.set(id, p)
-    p.onData((d) => this.safeEmit(id, 'data', d))
+    p.onData((d) => {
+      this.safeEmit(id, 'data', d)
+      this.scanOsc7(id, d)
+    })
     p.onExit(({ exitCode, signal }) => {
       this.handles.delete(id)
+      this.osc7Buffers.delete(id)
       const payload: PtyExitPayload = { code: exitCode, signal }
       this.safeEmit(id, 'exit', payload)
     })

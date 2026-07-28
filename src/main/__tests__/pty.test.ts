@@ -130,4 +130,67 @@ describe('PtyManager', () => {
 
     expect(mgr.input('x', 'y')).toBe(false)
   })
+
+  describe('OSC 7 working-directory tracking', () => {
+    it('is null until a pty emits OSC 7', () => {
+      const mgr = new PtyManager(() => undefined)
+      expect(mgr.getLastCwd()).toBeNull()
+      mgr.open({ file: '/bin/cat', args: [], env: {} })
+      expect(mgr.getLastCwd()).toBeNull()
+    })
+
+    it('extracts the cwd from an OSC 7 sequence (BEL terminator)', () => {
+      const mgr = new PtyManager(() => undefined)
+      mgr.open({ file: '/bin/cat', args: [], env: {} })
+      const fake = ptyModule.__spawned[ptyModule.__spawned.length - 1]
+      fake.emitData(`prompt $ \x1b]7;file://host/Users/foo/bar\x07`)
+      expect(mgr.getLastCwd()).toBe('/Users/foo/bar')
+    })
+
+    it('extracts the cwd with an ST (ESC \\) terminator', () => {
+      const mgr = new PtyManager(() => undefined)
+      mgr.open({ file: '/bin/cat', args: [], env: {} })
+      const fake = ptyModule.__spawned[ptyModule.__spawned.length - 1]
+      fake.emitData(`\x1b]7;file://host/Users/x\x1b\\`)
+      expect(mgr.getLastCwd()).toBe('/Users/x')
+    })
+
+    it('updates the cwd when a new directory is reported', () => {
+      const mgr = new PtyManager(() => undefined)
+      mgr.open({ file: '/bin/cat', args: [], env: {} })
+      const fake = ptyModule.__spawned[ptyModule.__spawned.length - 1]
+      fake.emitData('\x1b]7;file://h/Users/a\x07')
+      expect(mgr.getLastCwd()).toBe('/Users/a')
+      fake.emitData('\x1b]7;file://h/Users/b\x07')
+      expect(mgr.getLastCwd()).toBe('/Users/b')
+    })
+
+    it('handles a sequence split across data chunks', () => {
+      const mgr = new PtyManager(() => undefined)
+      mgr.open({ file: '/bin/cat', args: [], env: {} })
+      const fake = ptyModule.__spawned[ptyModule.__spawned.length - 1]
+      fake.emitData('some output \x1b]7;file://h/Users/')
+      fake.emitData('split/here\x07 trailing')
+      expect(mgr.getLastCwd()).toBe('/Users/split/here')
+    })
+
+    it('percent-decodes the reported path', () => {
+      const mgr = new PtyManager(() => undefined)
+      mgr.open({ file: '/bin/cat', args: [], env: {} })
+      const fake = ptyModule.__spawned[ptyModule.__spawned.length - 1]
+      fake.emitData('\x1b]7;file://h/Users/me/My%20Dir\x07')
+      expect(mgr.getLastCwd()).toBe('/Users/me/My Dir')
+    })
+
+    it('keeps the most recent cwd across multiple ptys', () => {
+      const mgr = new PtyManager(() => undefined)
+      mgr.open({ file: '/bin/cat', args: [], env: {} })
+      const a = ptyModule.__spawned[ptyModule.__spawned.length - 1]
+      mgr.open({ file: '/bin/cat', args: [], env: {} })
+      const b = ptyModule.__spawned[ptyModule.__spawned.length - 1]
+      a.emitData('\x1b]7;file://h/Users/a\x07')
+      b.emitData('\x1b]7;file://h/Users/b\x07')
+      expect(mgr.getLastCwd()).toBe('/Users/b')
+    })
+  })
 })

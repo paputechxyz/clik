@@ -134,11 +134,25 @@ export function registerIpc(getWin: () => BrowserWindow | null): IpcCleanup {
         env: {}
       })
     }
+    const remembered = ptys.getLastCwd()
+    let cwd = os.homedir()
+    if (remembered) {
+      try {
+        if (fs.statSync(remembered).isDirectory()) cwd = remembered
+      } catch {
+        // remembered path no longer exists; fall back to homedir
+      }
+    }
     return ptys.open({
       file: shellEnv.shell || process.env.SHELL || '/bin/zsh',
       args: ['-l'],
-      cwd: os.homedir(),
-      env: {}
+      cwd,
+      // /etc/zshrc sources /etc/zshrc_$TERM_PROGRAM on its last line.
+      // /etc/zshrc_Apple_Terminal registers update_terminal_cwd on precmd,
+      // which emits OSC 7 (file://host/<cwd>) before every prompt. We parse
+      // that to remember the working directory for the next tab. TERM_SESSION_ID
+      // is intentionally left unset so the session save/restore noise is skipped.
+      env: { TERM_PROGRAM: 'Apple_Terminal' }
     })
   })
   ipcMain.on('pty:input', (_e, id: string, data: string) => {
