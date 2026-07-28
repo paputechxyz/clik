@@ -4,6 +4,7 @@ import { useLayoutStore } from './store/useLayoutStore'
 import { ColumnNavigator } from './components/ColumnNavigator'
 import { LibraryColumn } from './components/LibraryColumn'
 import { SettingsModal } from './components/SettingsModal'
+import { UpdateBanner } from './components/UpdateBanner'
 import { RunTabs } from './components/RunTabs'
 import { Resizer } from './components/Resizer'
 import { ptyDataBus } from './lib/pty-events'
@@ -19,6 +20,8 @@ export function App(): JSX.Element {
   const clearRun = useAppStore((s) => s.clearRun)
   const toggleOutputExpanded = useLayoutStore((s) => s.toggleOutputExpanded)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [pendingUpdate, setPendingUpdate] = useState<string | null>(null)
+  const dismissedUpdateRef = useRef<string | undefined>(undefined)
 
   const bodyRef = useRef<HTMLDivElement>(null)
   const [bodyHeight, setBodyHeight] = useState(0)
@@ -54,6 +57,44 @@ export function App(): JSX.Element {
       offMenu()
     }
   }, [handlePtyEvent, openShellTab, closeRun, clearRun, toggleOutputExpanded])
+
+  // Background update check: the main process auto-checks ~5s after launch and
+  // pushes state via update:status. When a new version finishes downloading,
+  // surface a banner unless the user already dismissed that exact version
+  // (persisted in userData so it survives the upgrade itself).
+  useEffect(() => {
+    let cancelled = false
+    void window.clik.preferences.get().then((p) => {
+      if (cancelled) return
+      dismissedUpdateRef.current = p.dismissedUpdate
+      // Re-evaluate a downloaded update that landed before prefs loaded.
+      void window.clik.update.status().then((s) => {
+        if (cancelled) return
+        if (s && s.state === 'downloaded' && s.version && s.version !== dismissedUpdateRef.current) {
+          setPendingUpdate(s.version)
+        }
+      })
+    })
+    const off = window.clik.update.onStatus((e) => {
+      if (e.state === 'downloaded' && e.version && e.version !== dismissedUpdateRef.current) {
+        setPendingUpdate(e.version)
+      }
+    })
+    return () => {
+      cancelled = true
+      off()
+    }
+  }, [])
+
+  const openUpdateSettings = (): void => {
+    setPendingUpdate(null)
+    setSettingsOpen(true)
+  }
+  const dismissUpdate = async (version: string): Promise<void> => {
+    dismissedUpdateRef.current = version
+    await window.clik.preferences.dismissUpdate(version)
+    setPendingUpdate(null)
+  }
 
   useEffect(() => {
     const el = bodyRef.current
@@ -135,6 +176,14 @@ export function App(): JSX.Element {
       </div>
 
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+
+      {pendingUpdate && !settingsOpen && (
+        <UpdateBanner
+          version={pendingUpdate}
+          onUpdate={openUpdateSettings}
+          onDismiss={() => void dismissUpdate(pendingUpdate)}
+        />
+      )}
     </div>
   )
 }

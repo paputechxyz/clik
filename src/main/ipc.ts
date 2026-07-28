@@ -6,6 +6,7 @@ import type { BrowserWindow, OpenDialogOptions } from 'electron'
 import { Registry } from './registry'
 import { TreeCache } from './tree-cache'
 import { Library } from './library'
+import { Preferences } from './preferences'
 import { discoverTree, discoverCommand } from './adapter'
 import { ShellEnvCache } from './shell-env'
 import { resolveOnPath, scanCandidates, DEFAULT_CANDIDATES } from './scanner'
@@ -20,6 +21,7 @@ export function registerIpc(getWin: () => BrowserWindow | null): IpcCleanup {
   const registry = new Registry()
   const treeCache = new TreeCache()
   const library = new Library()
+  const preferences = new Preferences()
   const shellEnv = new ShellEnvCache()
   void shellEnv.refresh().catch(() => {
     // fallback: shellEnv.current stays process.env; surfaced via shell-env:status
@@ -123,6 +125,11 @@ export function registerIpc(getWin: () => BrowserWindow | null): IpcCleanup {
   ipcMain.handle('library:get', () => library.get())
   ipcMain.handle('library:save', (_e, data: LibraryData) => {
     library.set(data)
+  })
+
+  ipcMain.handle('prefs:get', () => preferences.get())
+  ipcMain.handle('prefs:setDismissedUpdate', (_e, version: string) => {
+    return preferences.setDismissedUpdate(String(version))
   })
 
   ipcMain.handle('pty:open', (_e, req: PtyOpenRequest) => ptys.open(req))

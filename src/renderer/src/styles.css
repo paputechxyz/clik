@@ -1,7 +1,7 @@
 /* ============================================================================
    CLIk — polished design system
    Modern dev-tool dark: cool near-black canvas with layered panel depth,
-   one confident cobalt accent, hairline borders, accent-tinted focus rings,
+   one confident green accent, hairline borders, accent-tinted focus rings,
    110–160ms motion, soft pulse on the running status dot.
    Tokens drive every rule; no raw hex outside :root.
    ============================================================================ */
@@ -33,17 +33,17 @@
   --border-strong: oklch(46% 0.01 255 / 0.65);
   --border-weak:   oklch(40% 0.008 255 / 0.22);
 
-  /* ---- Accent — confident cobalt blue --------------------------------- */
-  --accent:        oklch(68% 0.16 248);
-  --accent-hover:  oklch(73% 0.16 248);
-  --accent-press:  oklch(62% 0.14 248);
-  --accent-fg:     oklch(98.5% 0.01 248);
+  /* ---- Accent — primary green (#3ddc84) ------------------------------- */
+  --accent:        #3ddc84;
+  --accent-hover:  color-mix(in oklch, var(--accent) 88%, white);
+  --accent-press:  color-mix(in oklch, var(--accent) 78%, black);
+  --accent-fg:     oklch(22% 0.04 154);
   --accent-weak:   color-mix(in oklch, var(--accent) 15%, transparent);
   --accent-soft:   color-mix(in oklch, var(--accent) 30%, transparent);
   --accent-line:   color-mix(in oklch, var(--accent) 55%, transparent);
 
   /* ---- Semantic -------------------------------------------------------- */
-  --success:       oklch(76% 0.15 158);   /* argv preview / command green   */
+  --success:       var(--accent);   /* unified with primary green (#3ddc84) */
   --success-weak:  color-mix(in oklch, var(--success) 16%, transparent);
   --warning:       oklch(80% 0.14 78);
   --danger:        oklch(67% 0.2 25);
@@ -588,8 +588,11 @@ button { font-family: var(--font-ui); color: inherit; }
 }
 .ghost-btn:hover { background: var(--hover); border-color: var(--border-strong); }
 .ghost-btn:active { transform: scale(0.98); }
+.ghost-btn:disabled { opacity: 0.4; cursor: default; }
 .ghost-btn.danger { color: var(--danger-fg); }
 .ghost-btn.danger:hover { background: var(--danger-weak); border-color: var(--accent-line); }
+.ghost-btn.success { color: var(--success); }
+.ghost-btn.success:hover { background: var(--success-weak); border-color: color-mix(in oklch, var(--success) 45%, var(--border)); }
 
 /* ---- Output / run tabs ---------------------------------------------- */
 .output {
@@ -746,8 +749,9 @@ button { font-family: var(--font-ui); color: inherit; }
 }
 .entry-fieldset legend {
   font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.08em;
-  font-weight: var(--fw-medium); color: var(--fg-muted); padding: 0 var(--space-2);
+  font-weight: var(--fw-medium); color: var(--fg-muted); padding: var(--space-2) var(--space-2);
 }
+.entry-fieldset legend.legend-accent { color: var(--accent); }
 .entry-fieldset legend.collapsible-legend {
   cursor: pointer; user-select: none; display: inline-flex; align-items: center; gap: var(--space-1);
 }
@@ -760,7 +764,8 @@ button { font-family: var(--font-ui); color: inherit; }
 .legend-loading { color: var(--fg-faint); }
 .suggest-placeholder { min-height: 0; }
 .form-row { display: grid; grid-template-columns: 64px 1fr auto; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
-.entry-actions { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-1); }
+.entry-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-3); }
+.entry-actions .ghost-btn { min-width: 5.5rem; }
 .form-row label { font-size: var(--text-base); color: var(--fg-muted); font-weight: var(--fw-medium); }
 .env-area {
   grid-column: 2 / 4; background: var(--inset); border: 1px solid var(--border); color: var(--fg);
@@ -797,7 +802,7 @@ button { font-family: var(--font-ui); color: inherit; }
 }
 .resolved-hint {
   font-size: var(--text-sm); color: var(--success);
-  margin: calc(-1 * var(--space-2)) 0 var(--space-4);
+  margin: var(--space-3) 0 var(--space-4);
   font-family: var(--font-mono); word-break: break-all;
 }
 
@@ -841,4 +846,29 @@ button { font-family: var(--font-ui); color: inherit; }
     transition-duration: 0.001ms !important;
   }
   .status-running { animation: none; }
+}
+
+/* ---- Update banner --------------------------------------------------- */
+.update-banner {
+  position: fixed; right: var(--space-5); bottom: var(--space-5); z-index: 60;
+  width: 320px; padding: var(--space-4);
+  background: var(--panel-2); border: 1px solid var(--accent-line);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
+  display: flex; flex-direction: column; gap: var(--space-3);
+  animation: clik-banner-in var(--dur-base) var(--ease-out);
+}
+.update-banner-body { display: flex; flex-direction: column; gap: var(--space-1); }
+.update-banner-title {
+  display: flex; align-items: center; gap: var(--space-2);
+  font-size: var(--text-md); font-weight: var(--fw-semibold); color: var(--fg);
+}
+.update-banner-text { font-size: var(--text-sm); color: var(--fg-muted); }
+.update-banner-actions { display: flex; justify-content: flex-end; gap: var(--space-2); }
+.update-dot {
+  width: 8px; height: 8px; border-radius: var(--radius-pill);
+  background: var(--accent); box-shadow: 0 0 8px var(--accent-soft); flex: 0 0 auto;
+}
+@keyframes clik-banner-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }

@@ -2,30 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import type { CliEntry, ResolvedCommand, ShellEnvStatus, UpdateStatusEvent } from '../../../shared/types'
 import { useAppStore } from '../store/useAppStore'
 
-function serializeEnv(env: Record<string, string>): string {
-  return Object.entries(env)
-    .map(([k, v]) => `${k}=${v}`)
-    .join('\n')
-}
-
-function parseEnv(text: string): Record<string, string> {
-  const env: Record<string, string> = {}
-  for (const line of text.split('\n')) {
-    const trimmed = line.trim()
-    if (trimmed === '') continue
-    const idx = trimmed.indexOf('=')
-    if (idx <= 0) continue
-    env[trimmed.slice(0, idx).trim()] = trimmed.slice(idx + 1)
-  }
-  return env
-}
+const SHOW_SHELL_ENV = false
+const SHOW_DISCOVERED = false
 
 export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element {
   const entries = useAppStore((s) => s.entries)
   const addEntry = useAppStore((s) => s.addEntry)
   const updateEntry = useAppStore((s) => s.updateEntry)
   const removeEntry = useAppStore((s) => s.removeEntry)
-  const refreshEntry = useAppStore((s) => s.refreshEntry)
 
   const [newName, setNewName] = useState('')
   const [newPath, setNewPath] = useState('')
@@ -47,12 +31,23 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
       setSuggestionsLoaded(true)
     })
     void window.clik.version().then(setVersion)
+    void window.clik.update.status().then((s) => {
+      if (s) setUpdate(s)
+    })
     const off = window.clik.update.onStatus((e) => {
       setUpdate(e)
       if (e.state !== 'checking') setChecking(false)
     })
     return off
   }, [])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
 
   const refreshShell = async () => {
     setRefreshing(true)
@@ -77,14 +72,6 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
       setNewPath('')
       setAutoPath(false)
       autoRef.current = ''
-    }
-  }
-
-  const pickBinary = async () => {
-    const p = await window.clik.pickBinary()
-    if (p) {
-      setNewPath(p)
-      setAutoPath(false)
     }
   }
 
@@ -140,8 +127,8 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
       <div className="modal-card" onClick={(e) => e.stopPropagation()}>
         <header className="modal-head">
           <h2>Settings</h2>
-          <button className="icon-btn" onClick={onClose} title="Close">
-            x
+          <button className="icon-btn" onClick={onClose} title="Close (Esc)">
+            ✕
           </button>
         </header>
 
@@ -157,34 +144,36 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
                   Restart to Update
                 </button>
               ) : (
-                <button className="ghost-btn" onClick={() => void check()} disabled={checking || update.state === 'unavailable'}>
+                <button className="ghost-btn success" onClick={() => void check()} disabled={checking || update.state === 'unavailable'}>
                   {checking ? 'Checking…' : 'Check Updates'}
                 </button>
               )}
             </div>
           </fieldset>
-          <fieldset className="entry-fieldset">
-            <legend>Shell environment</legend>
-            <div className="shell-env-row">
-              <div className="shell-env-text">
-                Loaded from your login shell
-                {shellStatus ? (
-                  <>
-                    {' '}(<code>{shellStatus.shell}</code>) —{' '}
-                    {shellStatus.ready ? `${shellStatus.count} vars` : 'not ready'}
-                  </>
-                ) : (
-                  ' …'
-                )}
-                {shellStatus?.error && <div className="error-text">{shellStatus.error}</div>}
+          {SHOW_SHELL_ENV && (
+            <fieldset className="entry-fieldset">
+              <legend>Shell environment</legend>
+              <div className="shell-env-row">
+                <div className="shell-env-text">
+                  Loaded from your login shell
+                  {shellStatus ? (
+                    <>
+                      {' '}(<code>{shellStatus.shell}</code>) —{' '}
+                      {shellStatus.ready ? `${shellStatus.count} vars` : 'not ready'}
+                    </>
+                  ) : (
+                    ' …'
+                  )}
+                  {shellStatus?.error && <div className="error-text">{shellStatus.error}</div>}
+                </div>
+                <button className="ghost-btn" onClick={() => void refreshShell()} disabled={refreshing}>
+                  {refreshing ? 'Refreshing…' : 'Refresh'}
+                </button>
               </div>
-              <button className="ghost-btn" onClick={() => void refreshShell()} disabled={refreshing}>
-                {refreshing ? 'Refreshing…' : 'Refresh'}
-              </button>
-            </div>
-          </fieldset>
+            </fieldset>
+          )}
 
-          {(!suggestionsLoaded || discovered.length > 0) && (
+          {SHOW_DISCOVERED && (!suggestionsLoaded || discovered.length > 0) && (
             <fieldset className="entry-fieldset">
               <legend
                 className="collapsible-legend"
@@ -241,6 +230,8 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
                   value={e.binaryPath}
                   onChange={(ev) => updateField(e, { binaryPath: ev.target.value })}
                 />
+              </div>
+              <div className="entry-actions">
                 <button
                   className="ghost-btn"
                   title="Resolve via which"
@@ -251,38 +242,15 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
                 >
                   Resolve
                 </button>
-                <button
-                  className="ghost-btn"
-                  onClick={async () => {
-                    const p = await window.clik.pickBinary()
-                    if (p) updateField(e, { binaryPath: p })
-                  }}
-                >
-                  Browse
-                </button>
-              </div>
-              <div className="form-row">
-                <label>Env</label>
-                <textarea
-                  className="env-area"
-                  placeholder="KEY=VALUE"
-                  value={serializeEnv(e.env)}
-                  onChange={(ev) => updateField(e, { env: parseEnv(ev.target.value) })}
-                />
-              </div>
-              <div className="entry-actions">
                 <button className="ghost-btn danger" onClick={() => void removeEntry(e.id)}>
                   Remove
-                </button>
-                <button className="ghost-btn" title="Re-run discovery on the binary" onClick={() => void refreshEntry(e.id)}>
-                  Re-analyze
                 </button>
               </div>
             </fieldset>
           ))}
 
           <fieldset className="entry-fieldset">
-            <legend>Add a CLI</legend>
+            <legend className="legend-accent">Add a CLI</legend>
             <div className="form-row">
               <label>Name</label>
               <input
@@ -306,27 +274,20 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
                   setAutoPath(false)
                 }}
               />
-              <button className="ghost-btn" title="Resolve via which" onClick={() => void onNameBlur()}>
-                Resolve
-              </button>
-              <button className="ghost-btn" onClick={() => void pickBinary()}>
-                Browse
-              </button>
             </div>
             {autoPath && newPath !== '' && (
               <div className="resolved-hint">auto-resolved via which → {newPath}</div>
             )}
-            <button className="run-btn" onClick={() => void add()} disabled={newPath.trim() === ''}>
-              Add
-            </button>
+            <div className="entry-actions">
+              <button className="ghost-btn" title="Resolve via which" onClick={() => void onNameBlur()}>
+                Resolve
+              </button>
+              <button className="ghost-btn success" onClick={() => void add()} disabled={newPath.trim() === ''}>
+                Add
+              </button>
+            </div>
           </fieldset>
         </div>
-
-        <footer className="modal-foot">
-          <button className="run-btn" onClick={onClose}>
-            Done
-          </button>
-        </footer>
       </div>
     </div>
   )

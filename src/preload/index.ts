@@ -60,6 +60,7 @@ const api: ClikApi = {
   update: {
     check: () => ipcRenderer.invoke('update:check'),
     restart: () => ipcRenderer.invoke('update:restart'),
+    status: () => ipcRenderer.invoke('update:status:get'),
     onStatus: (cb) => {
       const handler = (_e: unknown, data: Parameters<typeof cb>[0]) => cb(data)
       ipcRenderer.on('update:status', handler)
@@ -67,6 +68,10 @@ const api: ClikApi = {
         ipcRenderer.removeListener('update:status', handler)
       }
     }
+  },
+  preferences: {
+    get: () => ipcRenderer.invoke('prefs:get'),
+    dismissUpdate: (version) => ipcRenderer.invoke('prefs:setDismissedUpdate', version)
   }
 }
 

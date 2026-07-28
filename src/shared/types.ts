@@ -145,6 +145,13 @@ export interface LibraryData {
   folders: Folder[]
 }
 
+export interface PreferencesData {
+  // Last update version the user dismissed. While the latest available
+  // update equals this, the update banner stays suppressed (until a newer
+  // version appears). Persisted in userData so it survives the upgrade.
+  dismissedUpdate?: string
+}
+
 export interface ClikApi {
   discover: (binaryPath: string, forceFresh?: boolean) => Promise<CommandTree>
   discoverCommand: (binaryPath: string, cmdPath: string[]) => Promise<CommandNode>
@@ -183,5 +190,10 @@ export interface ClikApi {
     check: () => Promise<{ ok: boolean }>
     restart: () => Promise<void>
     onStatus: (cb: (e: UpdateStatusEvent) => void) => () => void
+    status: () => Promise<UpdateStatusEvent | null>
+  }
+  preferences: {
+    get: () => Promise<PreferencesData>
+    dismissUpdate: (version: string) => Promise<PreferencesData>
   }
 }
