@@ -137,6 +137,10 @@ export interface HistoryItem {
   positional: string
   preview: string
   createdAt: number
+  // Arbitrary command string typed directly in the terminal (not produced via
+  // the flag-panel Run button). When set, the row injects this verbatim
+  // instead of restoring into the flag panel (loadCommand is a no-op).
+  rawCommand?: string
 }
 
 export interface LibraryData {

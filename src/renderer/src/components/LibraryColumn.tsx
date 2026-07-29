@@ -152,6 +152,7 @@ export function LibraryColumn(): JSX.Element {
   const removeSaved = useAppStore((s) => s.removeSaved)
   const clearHistory = useAppStore((s) => s.clearHistory)
   const loadCommand = useAppStore((s) => s.loadCommand)
+  const injectHistory = useAppStore((s) => s.injectHistory)
   const addFolder = useAppStore((s) => s.addFolder)
   const addRawCommand = useAppStore((s) => s.addRawCommand)
   const injectCommand = useAppStore((s) => s.injectCommand)
@@ -484,7 +485,10 @@ export function LibraryColumn(): JSX.Element {
               <ul className="lib-list">
                 {history.map((it) => (
                   <li key={it.id} className="lib-item" title={it.preview}>
-                    <button className="lib-item-main" onClick={() => void loadCommand(it)}>
+                    <button
+                      className="lib-item-main"
+                      onClick={() => void (it.rawCommand ? injectHistory(it) : loadCommand(it))}
+                    >
                       <span className="lib-item-name">{it.preview}</span>
                       <span className="lib-item-time">{formatTime(it.createdAt)}</span>
                     </button>

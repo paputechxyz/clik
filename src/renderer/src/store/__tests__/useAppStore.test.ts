@@ -281,6 +281,29 @@ describe('library folders, move/reorder, migration behavior', () => {
     expect(s.history).toEqual([hist]) // not purged
   })
 
+  it('addTerminalHistory records a typed command with rawCommand, newest first, and dedups consecutive repeats', () => {
+    const libSave = vi.fn<(d: LibraryData) => Promise<void>>(async () => undefined)
+    installApi({ library: { get: async () => ({ saved: [], history: [], folders: [] }), save: libSave } })
+
+    useAppStore.getState().addTerminalHistory('git status')
+    const s1 = useAppStore.getState()
+    expect(s1.history).toHaveLength(1)
+    expect(s1.history[0]).toMatchObject({ preview: 'git status', rawCommand: 'git status', entryId: '' })
+    expect(libSave).toHaveBeenCalledTimes(1)
+
+    // a different command lands on top (newest first)
+    useAppStore.getState().addTerminalHistory('ls -la')
+    expect(useAppStore.getState().history.map((h) => h.preview)).toEqual(['ls -la', 'git status'])
+
+    // an immediate back-to-back duplicate is dropped
+    useAppStore.getState().addTerminalHistory('ls -la')
+    expect(useAppStore.getState().history.map((h) => h.preview)).toEqual(['ls -la', 'git status'])
+
+    // blank input is ignored
+    useAppStore.getState().addTerminalHistory('   ')
+    expect(useAppStore.getState().history).toHaveLength(2)
+  })
+
   it('addEntry re-links orphaned saved/history to the re-added entry (new UUID)', async () => {
     const libSave = vi.fn<(d: LibraryData) => Promise<void>>(async () => undefined)
     installApi({

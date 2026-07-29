@@ -266,7 +266,9 @@ interface AppState {
   flushOutput: () => void
   saveCurrentCommand: () => void
   addRawCommand: (command: string) => void
+  addTerminalHistory: (command: string) => void
   injectCommand: (item: SavedCommandItem) => Promise<void>
+  injectHistory: (item: HistoryItem) => Promise<void>
   removeSaved: (id: string) => void
   clearHistory: () => void
   renameSaved: (id: string, name: string) => void
@@ -611,6 +613,35 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
   },
 
+  // Record a command the user typed directly in the terminal (shell tab) and
+  // submitted with Enter. Unlike runCommand (flag-panel Run), there is no
+  // associated CLI entry, so the item carries rawCommand and empty entry
+  // fields; clicking it re-injects the string into a terminal.
+  addTerminalHistory(command) {
+    const trimmed = command.trim()
+    if (trimmed === '') return
+    set((s) => {
+      // Skip a back-to-back duplicate (matches typical shell-history behavior)
+      // so spamming Enter or re-running the same line doesn't flood the panel.
+      if (s.history[0]?.preview === trimmed) return {}
+      const item: HistoryItem = {
+        id: uid(),
+        entryId: '',
+        entryName: '',
+        binaryName: '',
+        selection: [],
+        flags: {},
+        positional: '',
+        preview: trimmed,
+        createdAt: Date.now(),
+        rawCommand: trimmed
+      }
+      const history = [item, ...s.history].slice(0, MAX_HISTORY)
+      persistLibrary(s.saved, history, s.folders)
+      return { history }
+    })
+  },
+
   async injectCommand(item) {
     const { runs, activeRunId } = get()
     let target = runs.find((r) => r.id === activeRunId && r.status === 'running')
@@ -627,6 +658,24 @@ export const useAppStore = create<AppState>((set, get) => ({
     // keystroke (Enter to submit the injected line) goes to the PTY instead
     // of re-triggering the button. rAF lets a freshly-opened tab's terminal
     // mount first; an already-active tab's terminal is already in the DOM.
+    requestAnimationFrame(() => {
+      const ta = document.querySelector<HTMLElement>('.term-host .xterm-helper-textarea')
+      ta?.focus()
+    })
+  },
+
+  async injectHistory(item) {
+    const { runs, activeRunId } = get()
+    let target = runs.find((r) => r.id === activeRunId && r.status === 'running')
+    if (!target) target = runs.find((r) => r.status === 'running')
+    if (!target) {
+      await get().openShellTab()
+      target = get().runs[get().runs.length - 1]
+    }
+    if (!target) return
+    const cmd = item.rawCommand ?? item.preview
+    window.clik.pty.input(target.id, cmd)
+    set({ activeRunId: target.id })
     requestAnimationFrame(() => {
       const ta = document.querySelector<HTMLElement>('.term-host .xterm-helper-textarea')
       ta?.focus()

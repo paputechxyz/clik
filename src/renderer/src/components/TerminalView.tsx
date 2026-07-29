@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import type { Run } from '../store/useAppStore'
+import { useAppStore } from '../store/useAppStore'
 import { ptyDataBus } from '../lib/pty-events'
 import { translateEditKey, computeCursorDelta } from '../lib/term-keys'
 import { ChevronUpIcon, ChevronDownIcon, CloseIcon } from './icons'
@@ -192,9 +193,76 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
     termRef.current = term
     setReady(true)
 
+    // Track the in-progress shell line so commands typed directly in the
+    // terminal are recorded in the history panel (not just flag-panel Runs).
+    // lineBuf mirrors printable keystrokes (no shell prompt); on Enter we read
+    // the rendered line from the xterm buffer and use lineBuf to locate/strip
+    // the prompt, which also resolves tab completion (buffer > keystrokes).
+    let lineBuf = ''
+    const readCommandLine = (): string => {
+      const buf = term.buffer.active
+      const line = buf.getLine(buf.baseY + buf.cursorY)
+      return line ? line.translateToString(true).trimEnd() : ''
+    }
+    const submitLine = (): void => {
+      const fullLine = readCommandLine()
+      let command: string
+      if (lineBuf && fullLine.includes(lineBuf)) {
+        // Typed prefix locates the command on the rendered line; the suffix
+        // from its last occurrence is the full command (drops the prompt and
+        // picks up completions/recalls the keystream alone missed).
+        command = fullLine.slice(fullLine.lastIndexOf(lineBuf))
+      } else {
+        // Paste / un-echoed input: lineBuf already holds the command verbatim.
+        command = lineBuf
+      }
+      lineBuf = ''
+      const trimmed = command.trim()
+      if (trimmed) useAppStore.getState().addTerminalHistory(trimmed)
+    }
+
     term.onData((d) => {
       if (restoringRef.current) return
       window.clik.pty.input(run.id, d)
+
+      let i = 0
+      while (i < d.length) {
+        const code = d.charCodeAt(i)
+        const ch = d[i]
+
+        if (ch === '\r' || ch === '\n') {
+          submitLine()
+        } else if (code === 0x7f || code === 0x08) {
+          // DEL / Backspace
+          lineBuf = lineBuf.slice(0, -1)
+        } else if (code === 0x15) {
+          // Ctrl+U — kill line
+          lineBuf = ''
+        } else if (code === 0x17) {
+          // Ctrl+W — kill word
+          lineBuf = lineBuf.replace(/[ \t]*\S+[ \t]*$/, '')
+        } else if (code === 0x03 || code === 0x1a) {
+          // Ctrl+C / Ctrl+Z — abandon the line
+          lineBuf = ''
+        } else if (code === 0x1b) {
+          // Escape sequence (arrows, function keys, etc.) — consume it whole so
+          // its trailing printable bytes (e.g. the "[A" in "\x1b[A") don't leak
+          // into the typed-line buffer.
+          if (d[i + 1] === '[') {
+            let j = i + 2
+            while (j < d.length && d.charCodeAt(j) < 0x40) j++
+            i = Math.min(j + 1, d.length)
+          } else if (i + 1 < d.length) {
+            i += 2
+          } else {
+            i += 1
+          }
+          continue
+        } else if (code >= 0x20) {
+          lineBuf += ch
+        }
+        i++
+      }
     })
     term.onResize(({ cols, rows }) => window.clik.pty.resize(run.id, cols, rows))
     window.clik.pty.resize(run.id, term.cols, term.rows)
