@@ -1,0 +1,35 @@
+
+NAME
+    sdk - The command line interface (CLI) for SDKMAN!
+
+SYNOPSIS
+    sdk <subcommand> [candidate] [version]
+
+DESCRIPTION
+    SDKMAN! is a tool for managing parallel versions of multiple JVM related
+    Software Development Kits on most Unix based systems. It provides a
+    convenient Command Line Interface (CLI) and API for installing, switching,
+    removing and listing Candidates.
+
+SUBCOMMANDS & QUALIFIERS
+    help         [subcommand]
+    install      <candidate> [version] [path]
+    uninstall    <candidate> <version>
+    list         [candidate]
+    use          <candidate> <version>
+    config       no qualifier
+    default      <candidate> [version]
+    home         <candidate> <version>
+    env          [init|install|clear]
+    current      [candidate]
+    upgrade      [candidate]
+    version      no qualifier
+    selfupdate   [force]
+    update       no qualifier
+    flush        [tmp|metadata|version]
+
+EXAMPLES
+    sdk install java 17.0.0-tem
+    sdk help install
+
+

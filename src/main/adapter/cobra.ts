@@ -1,7 +1,9 @@
 import { spawn } from 'node:child_process'
 import path from 'node:path'
-import type { CommandNode, CommandTree, Flag, FlagType } from '../../shared/types'
+import type { CliEntry, CommandNode, CommandTree, Flag, FlagType } from '../../shared/types'
 import type { CliAdapter } from './types'
+import { shJoin } from '../scanner'
+import { defaultShell } from '../shell-env'
 
 // Strip ANSI escape codes (gcloud and other CLIs embed colour/formatting codes).
 const ANSI_RE = /\x1b\[[0-9;]*[A-Za-z]/g
@@ -14,8 +16,10 @@ function stripAnsi(s: string): string {
 // gh CLI prints them in ALL UPPERCASE with NO colon ("USAGE", "CORE COMMANDS",
 // "FLAGS"). Match both shapes: either a Title-Case line ending in a colon, or
 // an all-uppercase line (colon optional).
+// The all-caps alternative allows `&` between words so SDKMAN's
+// "SUBCOMMANDS & QUALIFIERS" section header is recognised.
 const HEADER_RE =
-  /^[A-Z][A-Za-z]+(?:\s+[A-Za-z]+){0,3}(?:\s*\([^)]*\))?:\s*$|^[A-Z][A-Z]+(?:\s+[A-Z]+){0,3}:?\s*$|^<[A-Z][A-Za-z]+>\s*$/
+  /^[A-Z][A-Za-z]+(?:\s+[A-Za-z]+){0,3}(?:\s*\([^)]*\))?:\s*$|^[A-Z][A-Z]+(?:\s+[A-Z&]+){0,3}:?\s*$|^<[A-Z][A-Za-z]+>\s*$/
 const FLAG_RE = /^\s+(-(\w),\s+)?--([\w-]+)(?:\s+(\S+))?\s{2,}(.*)$/
 // Accept a single tab (go indents commands with one tab) or 2+ spaces.
 const CHILD_RE = /^(?:\t|\s{2,})([A-Za-z0-9][\w-]*)\*?:?\s+(.*)$/
@@ -704,19 +708,42 @@ export function looksLikeManPage(text: string): boolean {
   return /[A-Z][A-Z0-9-]+\(\d+[A-Za-z]*\)/.test(head)
 }
 
-function runHelpArgs(
-  binaryPath: string,
-  cmdPath: string[],
-  helpFlag: string,
-  env: Record<string, string>
+// A CLI is invoked either as a real binary (spawned directly, shell:false) or
+// as a shell function/alias (e.g. SDKMAN's `sdk`), which only exists inside a
+// login+interactive shell and must run as `<shell> -lic '<name> ...'`.
+export type Invocation =
+  | { kind: 'binary'; binaryPath: string }
+  | { kind: 'shellFunction'; name: string; shell: string }
+
+function invDisplayName(inv: Invocation): string {
+  return inv.kind === 'binary' ? path.basename(inv.binaryPath) : inv.name
+}
+
+// Build the {file,args} for a shell-function help invocation. The argv (e.g.
+// ['install','--help'] or ['help','install']) is composed into one command
+// string run through the login+interactive shell so the function is defined.
+// Pure so it can be unit-tested without spawning.
+export function buildShellHelpArgs(
+  shell: string,
+  name: string,
+  argv: string[]
+): { file: string; args: string[] } {
+  return { file: shell, args: ['-lic', shJoin([name, ...argv])] }
+}
+
+// Low-level spawn: run file+args, accumulate stdout+stderr, resolve on exit if
+// anything was produced (many CLIs print help to stderr and exit non-zero),
+// reject on spawn error / silent non-zero / timeout.
+function runSpawn(
+  file: string,
+  args: string[],
+  env: Record<string, string>,
+  label: string
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    const { file, args } = buildHelpArgs(binaryPath, cmdPath, helpFlag)
     const child = spawn(file, args, { shell: false, env })
     let out = ''
     let settled = false
-    const label = cmdPath.length ? ` ${cmdPath.join(' ')}` : ''
-    const flagLabel = `${label} ${helpFlag}`
     const done = (fn: () => void) => {
       if (settled) return
       settled = true
@@ -731,7 +758,7 @@ function runHelpArgs(
       } catch {
         // ignore
       }
-      reject(new Error(`"${path.basename(binaryPath)}${flagLabel}" timed out after ${HELP_TIMEOUT_MS / 1000}s`))
+      reject(new Error(`${label} timed out after ${HELP_TIMEOUT_MS / 1000}s`))
     }, HELP_TIMEOUT_MS)
     child.stdout.on('data', (d: Buffer) => {
       out += d.toString('utf8')
@@ -740,7 +767,7 @@ function runHelpArgs(
       out += d.toString('utf8')
     })
     child.on('error', (err) => {
-      console.error(`[discover] ${path.basename(binaryPath)}${flagLabel} spawn error:`, err.message)
+      console.error(`[discover] ${label} spawn error:`, err.message)
       done(() => reject(err))
     })
     child.on('exit', (code, signal) => {
@@ -748,19 +775,36 @@ function runHelpArgs(
         done(() => resolve(out))
       } else {
         const detail = code !== null ? `code ${code}` : `signal ${signal ?? 'unknown'}`
-        const msg = `"${path.basename(binaryPath)}${flagLabel}" exited with ${detail}`
-        console.warn(`[discover] ${path.basename(binaryPath)}${flagLabel} failed: ${msg}`)
+        const msg = `${label} exited with ${detail}`
+        console.warn(`[discover] ${label} failed: ${msg}`)
         done(() => reject(new Error(msg)))
       }
     })
   })
 }
 
-function runHelp(binaryPath: string, cmdPath: string[], env: Record<string, string>): Promise<string> {
-  return runHelpArgs(binaryPath, cmdPath, '--help', env).then(async (out) => {
+// Run a help invocation for `argv` (relative to the root command, e.g.
+// ['install','--help'] or ['help','install']). Dispatches on invocation kind.
+function runHelpFor(inv: Invocation, argv: string[], env: Record<string, string>): Promise<string> {
+  const label = `"${invDisplayName(inv)} ${argv.join(' ')}"`
+  if (inv.kind === 'binary') {
+    // Binary help argv is [...cmdPath, helpFlag]; the last token is the flag.
+    const helpFlag = argv[argv.length - 1]
+    const cmdPath = argv.slice(0, -1)
+    const { file, args } = buildHelpArgs(inv.binaryPath, cmdPath, helpFlag)
+    return runSpawn(file, args, env, label)
+  }
+  const { file, args } = buildShellHelpArgs(inv.shell, inv.name, argv)
+  return runSpawn(file, args, env, label)
+}
+
+// Binary help: try --help, and if the output is an nroff man page (git
+// subcommands, gcloud) retry -h, which those emit as a clean usage dump.
+function runHelpBinary(inv: Invocation, cmdPath: string[], env: Record<string, string>): Promise<string> {
+  return runHelpFor(inv, [...cmdPath, '--help'], env).then(async (out) => {
     if (looksLikeManPage(out)) {
       try {
-        const short = await runHelpArgs(binaryPath, cmdPath, '-h', env)
+        const short = await runHelpFor(inv, [...cmdPath, '-h'], env)
         if (short.trim().length > 0) return short
       } catch {
         // keep the man-page output; parseHelp will do its best
@@ -770,6 +814,41 @@ function runHelp(binaryPath: string, cmdPath: string[], env: Record<string, stri
   })
 }
 
+// Produce the best help text + parse for a node. Binaries use --help (with the
+// man-page -h fallback). Shell-function CLIs are best-effort: try `<name>
+// <cmd> --help` first, but many (e.g. SDKMAN) don't do GNU --help and instead
+// expose `<name> help <cmd>` — so when the flag form yields nothing usable (no
+// subcommands and no flags), retry the `help`-subcommand form and keep
+// whichever parses better.
+async function discoverHelp(
+  inv: Invocation,
+  cmdPath: string[],
+  env: Record<string, string>,
+  prefixPath: string[]
+): Promise<{ help: string; parsed: ParsedHelp }> {
+  if (inv.kind === 'binary') {
+    const help = await runHelpBinary(inv, cmdPath, env)
+    return { help, parsed: parseHelp(help, prefixPath) }
+  }
+  const tryForm = async (argv: string[]): Promise<{ help: string; parsed: ParsedHelp }> => {
+    try {
+      const help = await runHelpFor(inv, argv, env)
+      return { help, parsed: parseHelp(help, prefixPath) }
+    } catch {
+      return { help: '', parsed: parseHelp('', prefixPath) }
+    }
+  }
+  const flagForm = await tryForm([...cmdPath, '--help'])
+  const learnedNothing = flagForm.parsed.children.length === 0 && flagForm.parsed.flags.length === 0
+  if (!learnedNothing) return flagForm
+  const subForm = await tryForm(['help', ...cmdPath])
+  const subBetter =
+    subForm.parsed.children.length > flagForm.parsed.children.length ||
+    (subForm.parsed.children.length === flagForm.parsed.children.length &&
+      subForm.help.length > flagForm.help.length)
+  return subBetter ? subForm : flagForm
+}
+
 export interface DiscoverProgress {
   done: number
   total: number
@@ -777,7 +856,7 @@ export interface DiscoverProgress {
 }
 
 async function buildNode(
-  binaryPath: string,
+  inv: Invocation,
   cmdPath: string[],
   short: string,
   depth = 0,
@@ -794,10 +873,9 @@ async function buildNode(
   // defaults to the last path segment for the common one-word-per-level case.
   label?: string
 ): Promise<CommandNode> {
-  const help = await runHelp(binaryPath, cmdPath, env)
-  const baseName = path.basename(binaryPath)
+  const baseName = invDisplayName(inv)
   const prefixPath = cmdPath.length === 0 ? [baseName] : [baseName, ...cmdPath]
-  const parsed = parseHelp(help, prefixPath)
+  const { help, parsed } = await discoverHelp(inv, cmdPath, env, prefixPath)
   const name = label ?? (cmdPath.length ? cmdPath[cmdPath.length - 1] : baseName)
 
   // yargs (and other CLIs) fall back to printing a parent's — often the
@@ -824,7 +902,7 @@ async function buildNode(
       try {
         children.push(
           await buildNode(
-            binaryPath,
+            inv,
             [...cmdPath, ...c.name.split(/\s+/)],
             c.short,
             depth + 1,
@@ -838,7 +916,7 @@ async function buildNode(
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         const label = cmdPath.length ? `${cmdPath.join(' ')} > ${c.name}` : `> ${c.name}`
-        console.warn(`[discover] ${path.basename(binaryPath)} ${label} — skipped (${msg})`)
+        console.warn(`[discover] ${baseName} ${label} — skipped (${msg})`)
       }
       done++
       if (depth === 0 && onTopChildDone) onTopChildDone(c.name, done, visibleChildren.length)
@@ -861,17 +939,32 @@ function countNodes(n: CommandNode): number {
   return n.children.reduce((acc, c) => acc + countNodes(c), 1)
 }
 
+// A shell-function CLI (kind:'shellFunction') has no file on PATH — binaryPath
+// holds the bare command name and discovery runs it through the login shell.
+export interface DiscoverOptions {
+  kind?: CliEntry['kind']
+  shell?: string
+}
+
+function toInvocation(binaryPath: string, opts?: DiscoverOptions): Invocation {
+  return opts?.kind === 'shellFunction'
+    ? { kind: 'shellFunction', name: binaryPath, shell: opts.shell || defaultShell() }
+    : { kind: 'binary', binaryPath }
+}
+
 export async function discoverTree(
   binaryPath: string,
   onProgress?: (p: DiscoverProgress) => void,
-  env: Record<string, string> = process.env as Record<string, string>
+  env: Record<string, string> = process.env as Record<string, string>,
+  opts?: DiscoverOptions
 ): Promise<CommandTree> {
-  const base = path.basename(binaryPath)
+  const inv = toInvocation(binaryPath, opts)
+  const base = invDisplayName(inv)
   console.log(`[discover] ${base} — starting (recursive --help discovery)`)
   const t0 = Date.now()
   try {
     const root = await buildNode(
-      binaryPath,
+      inv,
       [],
       '',
       0,
@@ -900,9 +993,10 @@ export async function discoverTree(
 export async function discoverCommand(
   binaryPath: string,
   cmdPath: string[],
-  env: Record<string, string> = process.env as Record<string, string>
+  env: Record<string, string> = process.env as Record<string, string>,
+  opts?: DiscoverOptions
 ): Promise<CommandNode> {
-  return buildNode(binaryPath, cmdPath, '', 0, undefined, undefined, undefined, env)
+  return buildNode(toInvocation(binaryPath, opts), cmdPath, '', 0, undefined, undefined, undefined, env)
 }
 
 export const cobraAdapter: CliAdapter = { name: 'cobra', discover: discoverTree }

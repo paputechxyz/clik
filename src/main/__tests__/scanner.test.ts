@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { resolveOnPath, scanCandidates, DEFAULT_CANDIDATES } from '../scanner'
+import { resolveOnPath, scanCandidates, classifyName, shQuote, shJoin, DEFAULT_CANDIDATES } from '../scanner'
 
 const ENV = { PATH: '/usr/bin:/bin:/usr/local/bin' }
 
@@ -92,5 +92,52 @@ describe('scanCandidates', () => {
 
   it('DEFAULT_CANDIDATES has no duplicates', () => {
     expect(DEFAULT_CANDIDATES.length).toBe(new Set(DEFAULT_CANDIDATES).size)
+  })
+})
+
+describe('shQuote / shJoin', () => {
+  it('single-quotes a plain argument', () => {
+    expect(shQuote('sdk')).toBe(`'sdk'`)
+  })
+
+  it('escapes embedded single quotes with the \'\\\'\' idiom', () => {
+    expect(shQuote("a'b")).toBe(`'a'\\''b'`)
+  })
+
+  it('joins arguments with spaces', () => {
+    expect(shJoin(['sdk', 'help', 'install'])).toBe(`'sdk' 'help' 'install'`)
+  })
+})
+
+describe('classifyName', () => {
+  const realPlatform = process.platform
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true })
+  })
+
+  it('returns null for an empty name', async () => {
+    expect(await classifyName('', '/bin/sh')).toBeNull()
+  })
+
+  it('returns null on win32 without spawning', async () => {
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
+    expect(await classifyName('ls', 'C:\\Windows\\System32\\cmd.exe')).toBeNull()
+  })
+
+  it.skipIf(process.platform === 'win32')('classifies a real binary as kind:binary with an absolute path', async () => {
+    const res = await classifyName('ls', '/bin/sh')
+    expect(res?.kind).toBe('binary')
+    if (res?.kind === 'binary') expect(res.path.startsWith('/')).toBe(true)
+  })
+
+  it.skipIf(process.platform === 'win32')('classifies a shell builtin (no path) as kind:shellFunction', async () => {
+    // `command -v cd` prints "cd" (a builtin), not a path — stands in for a
+    // function/alias that only exists inside the shell (e.g. SDKMAN's `sdk`).
+    const res = await classifyName('cd', '/bin/sh')
+    expect(res).toEqual({ kind: 'shellFunction', name: 'cd' })
+  })
+
+  it.skipIf(process.platform === 'win32')('returns null for a name that resolves to nothing', async () => {
+    expect(await classifyName('definitely-not-real-xyz-98765', '/bin/sh')).toBeNull()
   })
 })

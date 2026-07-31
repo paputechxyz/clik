@@ -2,8 +2,9 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { ClikApi } from '../shared/types'
 
 const api: ClikApi = {
-  discover: (binaryPath, forceFresh) => ipcRenderer.invoke('cli:discover', binaryPath, forceFresh),
-  discoverCommand: (binaryPath, cmdPath) => ipcRenderer.invoke('cli:discover-command', binaryPath, cmdPath),
+  discover: (binaryPath, forceFresh, kind) => ipcRenderer.invoke('cli:discover', binaryPath, forceFresh, kind),
+  discoverCommand: (binaryPath, cmdPath, kind) =>
+    ipcRenderer.invoke('cli:discover-command', binaryPath, cmdPath, kind),
   onDiscoverProgress: (cb) => {
     const handler = (_e: unknown, data: Parameters<typeof cb>[0]) => cb(data)
     ipcRenderer.on('cli:discover:progress', handler)
@@ -18,6 +19,7 @@ const api: ClikApi = {
   },
   scan: {
     resolve: (name) => ipcRenderer.invoke('scan:resolve', name),
+    classify: (name) => ipcRenderer.invoke('scan:classify', name),
     suggest: (names) => ipcRenderer.invoke('scan:suggest', names)
   },
   registry: {

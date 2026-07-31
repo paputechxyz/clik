@@ -9,7 +9,7 @@ import { Library } from './library'
 import { Preferences } from './preferences'
 import { discoverTree, discoverCommand } from './adapter'
 import { ShellEnvCache } from './shell-env'
-import { resolveOnPath, scanCandidates, DEFAULT_CANDIDATES } from './scanner'
+import { resolveOnPath, scanCandidates, classifyName, DEFAULT_CANDIDATES } from './scanner'
 import { PtyManager } from './pty'
 import type { CliEntry, CommandNode, CommandTree, LibraryData, PtyEvent, PtyOpenRequest } from '../shared/types'
 
@@ -33,52 +33,66 @@ export function registerIpc(getWin: () => BrowserWindow | null): IpcCleanup {
     w.webContents.send('pty:event', evt)
   }, () => shellEnv.current)
 
-  ipcMain.handle('cli:discover', async (e, binaryPath: string, forceFresh?: boolean): Promise<CommandTree> => {
-    console.log(`[ipc] cli:discover ${binaryPath}${forceFresh ? ' (force)' : ''}`)
+  ipcMain.handle('cli:discover', async (e, binaryPath: string, forceFresh?: boolean, kind?: CliEntry['kind']): Promise<CommandTree> => {
+    console.log(`[ipc] cli:discover ${binaryPath}${forceFresh ? ' (force)' : ''}${kind === 'shellFunction' ? ' (shell fn)' : ''}`)
+
+    // A shell-function CLI has no file on disk to stat — key its cache by name
+    // with a constant mtime, invalidated only by manual Refresh (forceFresh).
+    const isShellFn = kind === 'shellFunction'
+    const cacheMtime = (): number | null => {
+      if (isShellFn) return 0
+      try {
+        return fs.statSync(binaryPath).mtimeMs
+      } catch {
+        return null
+      }
+    }
 
     if (!forceFresh) {
-      try {
-        const st = fs.statSync(binaryPath)
-        const cached = treeCache.get(binaryPath, st.mtimeMs)
+      const mt = cacheMtime()
+      if (mt !== null) {
+        const cached = treeCache.get(binaryPath, mt)
         if (cached) {
           console.log(`[discover] ${nodePath.basename(binaryPath)} — cache hit`)
           return cached
         }
-      } catch {
-        // stat failed; fall through to fresh discover (which will also fail)
       }
     }
 
     // Wait for the startup shell-env capture so the discover spawn inherits
-    // the user's real PATH (e.g. node for npm's #!/usr/bin/env node shebang).
+    // the user's real PATH (e.g. node for npm's #!/usr/bin/env node shebang),
+    // and — for shell functions — the shell that defines them.
     await shellEnv.whenReady()
 
     const env = shellEnv.current
-    const tree = await discoverTree(binaryPath, (p) => {
-      e.sender.send('cli:discover:progress', { binaryPath, ...p })
-    }, env)
+    const tree = await discoverTree(
+      binaryPath,
+      (p) => {
+        e.sender.send('cli:discover:progress', { binaryPath, ...p })
+      },
+      env,
+      { kind, shell: shellEnv.shell }
+    )
 
-    try {
-      const st = fs.statSync(binaryPath)
-      // A tree with zero children almost always means discovery silently
-      // failed (broken spawn, missing runtime, unparseable help). Don't
-      // cache it — next launch should retry instead of returning the
-      // poisoned result forever.
-      if (tree.root.children.length > 0) {
-        treeCache.set(binaryPath, st.mtimeMs, tree)
-      } else {
-        console.warn(`[discover] ${nodePath.basename(binaryPath)} — not caching (0 children)`)
-      }
-    } catch {
-      // binary vanished or unstatable; skip caching
+    // A tree with zero children almost always means discovery silently failed
+    // (broken spawn, missing runtime, unparseable help). Don't cache it — next
+    // launch should retry instead of returning the poisoned result forever.
+    if (tree.root.children.length > 0) {
+      const mt = cacheMtime()
+      if (mt !== null) treeCache.set(binaryPath, mt, tree)
+    } else {
+      console.warn(`[discover] ${nodePath.basename(binaryPath)} — not caching (0 children)`)
     }
 
     return tree
   })
-  ipcMain.handle('cli:discover-command', async (_e, binaryPath: string, cmdPath: string[]): Promise<CommandNode> => {
-    await shellEnv.whenReady()
-    return discoverCommand(binaryPath, cmdPath, shellEnv.current)
-  })
+  ipcMain.handle(
+    'cli:discover-command',
+    async (_e, binaryPath: string, cmdPath: string[], kind?: CliEntry['kind']): Promise<CommandNode> => {
+      await shellEnv.whenReady()
+      return discoverCommand(binaryPath, cmdPath, shellEnv.current, { kind, shell: shellEnv.shell })
+    }
+  )
 
   ipcMain.handle('dialog:pickBinary', async () => {
     const win = getWin()
@@ -112,6 +126,10 @@ export function registerIpc(getWin: () => BrowserWindow | null): IpcCleanup {
   })
 
   ipcMain.handle('scan:resolve', (_e, name: string) => resolveOnPath(String(name ?? ''), shellEnv.current))
+  ipcMain.handle('scan:classify', async (_e, name: string) => {
+    await shellEnv.whenReady()
+    return classifyName(String(name ?? ''), shellEnv.shell)
+  })
   ipcMain.handle('scan:suggest', (_e, names?: string[]) =>
     scanCandidates(names && names.length > 0 ? names : DEFAULT_CANDIDATES, shellEnv.current)
   )

@@ -31,10 +31,22 @@ export interface CommandTree {
 export interface CliEntry {
   id: string
   name: string
+  // For a 'binary' entry this is a filesystem path to an executable. For a
+  // 'shellFunction' entry there is no file on PATH — binaryPath holds the bare
+  // command name (e.g. "sdk"), which is invoked through the login+interactive
+  // shell for discovery and injected verbatim into a shell tab when run.
   binaryPath: string
+  // Defaults to 'binary' when absent (older registry data has no kind).
+  kind?: 'binary' | 'shellFunction'
   env: Record<string, string>
   defaultArgs?: string[]
 }
+
+// How a shell name resolves when adding a CLI: a real executable on PATH, or a
+// shell function/alias only defined inside the login+interactive shell.
+export type NameClassification =
+  | { kind: 'binary'; path: string }
+  | { kind: 'shellFunction'; name: string }
 
 export interface ShellEnvStatus {
   ready: boolean
@@ -157,8 +169,8 @@ export interface PreferencesData {
 }
 
 export interface ClikApi {
-  discover: (binaryPath: string, forceFresh?: boolean) => Promise<CommandTree>
-  discoverCommand: (binaryPath: string, cmdPath: string[]) => Promise<CommandNode>
+  discover: (binaryPath: string, forceFresh?: boolean, kind?: CliEntry['kind']) => Promise<CommandTree>
+  discoverCommand: (binaryPath: string, cmdPath: string[], kind?: CliEntry['kind']) => Promise<CommandNode>
   onDiscoverProgress: (cb: (p: DiscoverProgress) => void) => () => void
   pickBinary: () => Promise<string | null>
   shellEnv: {
@@ -167,6 +179,7 @@ export interface ClikApi {
   }
   scan: {
     resolve: (name: string) => Promise<string | null>
+    classify: (name: string) => Promise<NameClassification | null>
     suggest: (names?: string[]) => Promise<ResolvedCommand[]>
   }
   registry: {

@@ -365,6 +365,10 @@ export function ColumnNavigator({ onAddCommand }: { onAddCommand: () => void }):
       flagsTitle = selection.length > 0 ? selection.join(' ') : tree.binaryName
     }
   }
+  // Small marker so it's clear this CLI is a shell function (no binary path),
+  // invoked through the login shell rather than spawned directly.
+  const selectedEntry = entries.find((e) => e.id === selectedEntryId)
+  if (selectedEntry?.kind === 'shellFunction') flagsTitle += ' [shell function]'
   panels.push({ key: 'flags', title: flagsTitle, details: true, body: <FlagPanel /> })
 
   const count = panels.length
