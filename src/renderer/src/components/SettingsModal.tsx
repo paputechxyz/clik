@@ -10,6 +10,11 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
   const addEntry = useAppStore((s) => s.addEntry)
   const updateEntry = useAppStore((s) => s.updateEntry)
   const removeEntry = useAppStore((s) => s.removeEntry)
+  const savedCount = useAppStore((s) => s.saved.length)
+  const exportSaved = useAppStore((s) => s.exportSaved)
+  const importSaved = useAppStore((s) => s.importSaved)
+  const [ioBusy, setIoBusy] = useState(false)
+  const [ioStatus, setIoStatus] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
 
   const [newName, setNewName] = useState('')
   const [newPath, setNewPath] = useState('')
@@ -144,6 +149,40 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
     await window.clik.update.check()
   }
 
+  const plural = (n: number): string => `${n} command${n === 1 ? '' : 's'}`
+
+  const onExport = async (): Promise<void> => {
+    setIoBusy(true)
+    setIoStatus(null)
+    try {
+      const res = await exportSaved()
+      if (res.canceled) return
+      setIoStatus(
+        res.ok
+          ? { kind: 'ok', text: `Exported ${plural(res.count ?? 0)}.` }
+          : { kind: 'error', text: `Export failed: ${res.error ?? 'unknown error'}` }
+      )
+    } finally {
+      setIoBusy(false)
+    }
+  }
+
+  const onImport = async (): Promise<void> => {
+    setIoBusy(true)
+    setIoStatus(null)
+    try {
+      const res = await importSaved()
+      if (res.canceled) return
+      setIoStatus(
+        res.ok
+          ? { kind: 'ok', text: `Imported ${plural(res.count ?? 0)}.` }
+          : { kind: 'error', text: `Import failed: ${res.error ?? 'unknown error'}` }
+      )
+    } finally {
+      setIoBusy(false)
+    }
+  }
+
   const isDownloaded = update.state === 'downloaded'
 
   return (
@@ -174,6 +213,41 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
               )}
             </div>
           </fieldset>
+
+          <fieldset className="entry-fieldset">
+            <legend>Saved commands</legend>
+            <div className="shell-env-row">
+              <div className="shell-env-text">
+                {savedCount > 0
+                  ? `${plural(savedCount)} saved`
+                  : 'No saved commands yet'}
+                {ioStatus && (
+                  <div className={ioStatus.kind === 'error' ? 'error-text' : 'resolved-hint'}>
+                    {ioStatus.text}
+                  </div>
+                )}
+              </div>
+              <div className="entry-actions" style={{ marginTop: 0 }}>
+                <button
+                  className="ghost-btn"
+                  onClick={() => void onImport()}
+                  disabled={ioBusy}
+                  title="Import saved commands from a JSON file (overrides on conflict)"
+                >
+                  Import
+                </button>
+                <button
+                  className="ghost-btn success"
+                  onClick={() => void onExport()}
+                  disabled={ioBusy || savedCount === 0}
+                  title="Export all saved commands to a JSON file"
+                >
+                  Export
+                </button>
+              </div>
+            </div>
+          </fieldset>
+
           {SHOW_SHELL_ENV && (
             <fieldset className="entry-fieldset">
               <legend>Shell environment</legend>

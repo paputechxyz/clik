@@ -161,6 +161,32 @@ export interface LibraryData {
   folders: Folder[]
 }
 
+// Payload written to / read from a saved-commands export file. Only saved
+// commands (and the folders they live in) travel — history is session-local and
+// intentionally excluded.
+export interface SavedExportData {
+  saved: SavedCommandItem[]
+  folders: Folder[]
+}
+
+export interface ExportResult {
+  ok: boolean
+  // The user dismissed the native save dialog — not an error.
+  canceled?: boolean
+  error?: string
+  count?: number
+}
+
+export interface ImportResult {
+  ok: boolean
+  // The user dismissed the native open dialog — not an error.
+  canceled?: boolean
+  error?: string
+  count?: number
+  saved?: SavedCommandItem[]
+  folders?: Folder[]
+}
+
 export interface PreferencesData {
   // Last update version the user dismissed. While the latest available
   // update equals this, the update banner stays suppressed (until a newer
@@ -192,6 +218,8 @@ export interface ClikApi {
   library: {
     get: () => Promise<LibraryData>
     save: (data: LibraryData) => Promise<void>
+    export: (data: SavedExportData) => Promise<ExportResult>
+    import: () => Promise<ImportResult>
   }
   pty: {
     open: (req: PtyOpenRequest) => Promise<string>

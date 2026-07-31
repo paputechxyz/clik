@@ -1,17 +1,28 @@
-import { ipcMain, dialog } from 'electron'
+import { app, ipcMain, dialog } from 'electron'
 import os from 'node:os'
 import nodePath from 'node:path'
 import fs from 'node:fs'
-import type { BrowserWindow, OpenDialogOptions } from 'electron'
+import type { BrowserWindow, OpenDialogOptions, SaveDialogOptions } from 'electron'
 import { Registry } from './registry'
 import { TreeCache } from './tree-cache'
 import { Library } from './library'
+import { normalizeSaved } from './library-migrate'
 import { Preferences } from './preferences'
 import { discoverTree, discoverCommand } from './adapter'
 import { ShellEnvCache } from './shell-env'
 import { resolveOnPath, scanCandidates, classifyName, DEFAULT_CANDIDATES } from './scanner'
 import { PtyManager } from './pty'
-import type { CliEntry, CommandNode, CommandTree, LibraryData, PtyEvent, PtyOpenRequest } from '../shared/types'
+import type {
+  CliEntry,
+  CommandNode,
+  CommandTree,
+  ExportResult,
+  ImportResult,
+  LibraryData,
+  PtyEvent,
+  PtyOpenRequest,
+  SavedExportData
+} from '../shared/types'
 
 export interface IpcCleanup {
   stopAll: () => void
@@ -143,6 +154,51 @@ export function registerIpc(getWin: () => BrowserWindow | null): IpcCleanup {
   ipcMain.handle('library:get', () => library.get())
   ipcMain.handle('library:save', (_e, data: LibraryData) => {
     library.set(data)
+  })
+
+  ipcMain.handle('library:export', async (_e, data: SavedExportData): Promise<ExportResult> => {
+    const win = getWin()
+    const opts: SaveDialogOptions = {
+      title: 'Export Saved Commands',
+      defaultPath: nodePath.join(app.getPath('downloads'), 'clik-saved-commands.json'),
+      filters: [{ name: 'JSON', extensions: ['json'] }]
+    }
+    const res = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)
+    if (res.canceled || !res.filePath) return { ok: false, canceled: true }
+    const saved = Array.isArray(data?.saved) ? data.saved : []
+    const folders = Array.isArray(data?.folders) ? data.folders : []
+    const payload = { type: 'clik-saved-commands', version: 1, exportedAt: Date.now(), saved, folders }
+    try {
+      fs.writeFileSync(res.filePath, JSON.stringify(payload, null, 2))
+      return { ok: true, count: saved.length }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  })
+
+  ipcMain.handle('library:import', async (): Promise<ImportResult> => {
+    const win = getWin()
+    const opts: OpenDialogOptions = {
+      title: 'Import Saved Commands',
+      properties: ['openFile'],
+      filters: [{ name: 'JSON', extensions: ['json'] }]
+    }
+    const res = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
+    if (res.canceled || res.filePaths.length === 0) return { ok: false, canceled: true }
+    try {
+      const raw = fs.readFileSync(res.filePaths[0], 'utf8')
+      // Accept both our export envelope ({ saved, folders, ... }) and a bare
+      // library.json ({ saved, history, folders }) — both expose `saved`/`folders`.
+      const parsed = JSON.parse(raw) as Partial<SavedExportData>
+      if (!parsed || !Array.isArray(parsed.saved)) {
+        return { ok: false, error: 'No saved commands found in the selected file.' }
+      }
+      const saved = parsed.saved.map(normalizeSaved)
+      const folders = Array.isArray(parsed.folders) ? parsed.folders : []
+      return { ok: true, count: saved.length, saved, folders }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    }
   })
 
   ipcMain.handle('prefs:get', () => preferences.get())
