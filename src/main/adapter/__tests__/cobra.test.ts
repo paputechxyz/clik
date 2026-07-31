@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
-import { parseHelp, buildHelpArgs, looksLikeManPage } from '../cobra'
+import { parseHelp, buildHelpArgs, buildShellHelpArgs, looksLikeManPage } from '../cobra'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const fx = (name: string): string => readFileSync(path.join(here, 'fixtures', name), 'utf8')
@@ -807,5 +807,52 @@ describe('buildHelpArgs (platform routing)', () => {
     const { file, args } = buildHelpArgs('/usr/local/bin/gh', ['repo', 'view'])
     expect(file).toBe('/usr/local/bin/gh')
     expect(args).toEqual(['repo', 'view', '--help'])
+  })
+})
+
+describe('parseHelp - sdk (SUBCOMMANDS & QUALIFIERS section)', () => {
+  const p = parseHelp(fx('sdk-help.txt'))
+
+  it('recognises the ampersand section header as a commands section', () => {
+    const names = p.children.map((c) => c.name)
+    expect(names).toContain('install')
+    expect(names).toContain('list')
+    expect(names).toContain('use')
+    expect(names).toContain('uninstall')
+    expect(names).toContain('current')
+    expect(names).toContain('version')
+  })
+
+  it('parses every qualifier row as a child (the built-in help row is dropped later by SKIP_CHILDREN during discovery)', () => {
+    expect(p.children.map((c) => c.name)).toContain('help')
+    expect(p.children.length).toBe(15)
+  })
+
+  it('has no typed flags (SDKMAN uses positional qualifiers, not flags)', () => {
+    expect(p.flags).toEqual([])
+    expect(p.globalFlags).toEqual([])
+  })
+})
+
+describe('parseHelp - sdk help install (leaf, man-page-ish)', () => {
+  const p = parseHelp(fx('sdk-help-install.txt'))
+
+  it('is a leaf: no children and no flags', () => {
+    expect(p.children).toEqual([])
+    expect(p.flags).toEqual([])
+  })
+})
+
+describe('buildShellHelpArgs (shell-function routing)', () => {
+  it('composes the argv into a single login+interactive shell command', () => {
+    const { file, args } = buildShellHelpArgs('/bin/zsh', 'sdk', ['help', 'install'])
+    expect(file).toBe('/bin/zsh')
+    expect(args).toEqual(['-lic', `'sdk' 'help' 'install'`])
+  })
+
+  it('single-quotes each token so a crafted name cannot break out', () => {
+    const { args } = buildShellHelpArgs('/bin/zsh', "sd'k", ['--help'])
+    expect(args[0]).toBe('-lic')
+    expect(args[1]).toBe(`'sd'\\''k' '--help'`)
   })
 })

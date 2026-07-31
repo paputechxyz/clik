@@ -1,5 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { spawn } from 'node:child_process'
+import type { NameClassification } from '../shared/types'
 
 export const DEFAULT_CANDIDATES: string[] = Array.from(
   new Set([
@@ -151,4 +153,63 @@ export function scanCandidates(names: string[], env: Record<string, string>): Re
     if (p) out.push({ name: trimmed, path: p })
   }
   return out
+}
+
+// POSIX single-quote escaping so a user-supplied name can be embedded in a
+// shell command string without injection: wrap in single quotes and replace
+// each embedded quote with the '\'' idiom. Shared with the discovery adapter,
+// which builds `<name> ... --help` command lines for shell-function CLIs.
+export function shQuote(arg: string): string {
+  return `'${arg.replace(/'/g, `'\\''`)}'`
+}
+
+export function shJoin(args: string[]): string {
+  return args.map(shQuote).join(' ')
+}
+
+const CLASSIFY_BEGIN = '__CLIK_CLASSIFY_BEGIN__'
+const CLASSIFY_END = '__CLIK_CLASSIFY_END__'
+
+// Classify a bare command name using the user's login+interactive shell.
+// `resolveOnPath` only sees executable *files* on PATH, so shell functions and
+// aliases (e.g. SDKMAN's `sdk`, defined in ~/.zshrc) resolve to null there.
+// This runs the shell so those are visible: `command -v` prints an absolute
+// path for a real binary, or the bare name/definition for a function, alias,
+// or builtin. Windows has no equivalent notion — return null (matches the
+// Windows short-circuit in shell-env.ts).
+export function classifyName(
+  name: string,
+  shell: string,
+  timeoutMs = 8000
+): Promise<NameClassification | null> {
+  const trimmed = name.trim()
+  if (trimmed === '' || isWindows()) return Promise.resolve(null)
+  const script = `echo ${CLASSIFY_BEGIN}; command -v -- ${shQuote(trimmed)} 2>/dev/null; echo ${CLASSIFY_END}`
+  return new Promise((resolve) => {
+    const child = spawn(shell, ['-lic', script], { stdio: ['ignore', 'pipe', 'pipe'] })
+    let stdout = ''
+    const timer = setTimeout(() => {
+      child.kill('SIGTERM')
+      resolve(null)
+    }, timeoutMs)
+    child.stdout.on('data', (d: Buffer) => {
+      stdout += d.toString('utf8')
+    })
+    child.on('error', () => {
+      clearTimeout(timer)
+      resolve(null)
+    })
+    child.on('exit', () => {
+      clearTimeout(timer)
+      const b = stdout.indexOf(CLASSIFY_BEGIN)
+      const e = stdout.lastIndexOf(CLASSIFY_END)
+      if (b === -1 || e === -1 || e <= b) return resolve(null)
+      const value = stdout.slice(b + CLASSIFY_BEGIN.length, e).trim()
+      if (value === '') return resolve(null)
+      // A real binary resolves to an absolute path; anything else (a bare name
+      // like "sdk", or an alias definition) is only defined inside the shell.
+      if (value.startsWith('/')) return resolve({ kind: 'binary', path: value })
+      return resolve({ kind: 'shellFunction', name: trimmed })
+    })
+  })
 }

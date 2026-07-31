@@ -14,6 +14,9 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
   const [newName, setNewName] = useState('')
   const [newPath, setNewPath] = useState('')
   const [autoPath, setAutoPath] = useState(false)
+  // True when the typed name resolves to a shell function/alias (e.g. SDKMAN's
+  // `sdk`) rather than a binary on PATH — added as a kind:'shellFunction' entry.
+  const [newIsShellFn, setNewIsShellFn] = useState(false)
   const autoRef = useRef('')
   const [shellStatus, setShellStatus] = useState<ShellEnvStatus | null>(null)
   const [refreshing, setRefreshing] = useState(false)
@@ -63,12 +66,27 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
   }
 
   const onNameBlur = async () => {
-    const p = await resolveName(newName)
+    const name = newName.trim()
+    const p = await resolveName(name)
     if (p) {
       setNewPath(p)
       setAutoPath(true)
+      setNewIsShellFn(false)
       autoRef.current = p
-    } else if (newPath === autoRef.current) {
+      return
+    }
+    // Not a binary on PATH — it may be a shell function/alias defined only
+    // inside the login shell (e.g. `sdk`). Ask the shell.
+    const cls = name !== '' ? await window.clik.scan.classify(name) : null
+    if (cls?.kind === 'binary') {
+      setNewPath(cls.path)
+      setAutoPath(true)
+      setNewIsShellFn(false)
+      autoRef.current = cls.path
+      return
+    }
+    setNewIsShellFn(cls?.kind === 'shellFunction')
+    if (newPath === autoRef.current) {
       setNewPath('')
       setAutoPath(false)
       autoRef.current = ''
@@ -78,11 +96,17 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
   const add = async (name?: string, binaryPath?: string) => {
     const nm = (name ?? newName).trim() || 'command'
     const pp = (binaryPath ?? newPath).trim()
-    if (pp === '') return
-    await addEntry({ name: nm, binaryPath: pp, env: {} })
+    // A shell-function entry (detected from the manual form) has no binary
+    // path — invoke it by name through the login shell instead.
+    const shellFn = name === undefined && binaryPath === undefined && newIsShellFn && pp === ''
+    if (pp === '' && !shellFn) return
+    await addEntry(
+      shellFn ? { name: nm, binaryPath: nm, kind: 'shellFunction', env: {} } : { name: nm, binaryPath: pp, env: {} }
+    )
     setNewName('')
     setNewPath('')
     setAutoPath(false)
+    setNewIsShellFn(false)
     autoRef.current = ''
   }
 
@@ -258,7 +282,10 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
                 className="flag-input"
                 placeholder="myapp"
                 value={newName}
-                onChange={(e) => setNewName(e.target.value)}
+                onChange={(e) => {
+                  setNewName(e.target.value)
+                  setNewIsShellFn(false)
+                }}
                 onBlur={() => void onNameBlur()}
               />
             </div>
@@ -278,11 +305,18 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
             {autoPath && newPath !== '' && (
               <div className="resolved-hint">auto-resolved via which → {newPath}</div>
             )}
+            {newIsShellFn && newPath === '' && (
+              <div className="resolved-hint">detected shell function → runs through your login shell</div>
+            )}
             <div className="entry-actions">
               <button className="ghost-btn" title="Resolve via which" onClick={() => void onNameBlur()}>
                 Resolve
               </button>
-              <button className="ghost-btn success" onClick={() => void add()} disabled={newPath.trim() === ''}>
+              <button
+                className="ghost-btn success"
+                onClick={() => void add()}
+                disabled={newPath.trim() === '' && !newIsShellFn}
+              >
                 Add
               </button>
             </div>

@@ -186,7 +186,7 @@ async function runDiscover(get: StoreGet, set: StoreSet, id: string, forceFresh 
     discoverProgress: { ...s.discoverProgress, [entry.binaryPath]: null }
   }))
   try {
-    const tree = await window.clik.discover(entry.binaryPath, forceFresh)
+    const tree = await window.clik.discover(entry.binaryPath, forceFresh, entry.kind)
     const count = (n: CommandNode, acc = 0): number =>
       n.children.reduce((a, c) => count(c, a), acc) + 1
     console.log(
@@ -881,7 +881,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (cmdPath.length > 0 && !findNode(tree, cmdPath)) {
       console.log('[import] cmdPath not in tree — discovering on demand:', cmdPath)
       try {
-        const discovered = await window.clik.discoverCommand(entry.binaryPath, cmdPath)
+        const discovered = await window.clik.discoverCommand(entry.binaryPath, cmdPath, entry.kind)
         console.log('[import] discovered node=', discovered.name, 'isGroup=', discovered.isGroup, 'flags=', discovered.flags.map((f) => `${f.name}:${f.type}`))
         tree = graftIntoTree(tree, cmdPath, discovered)
         set((s) => ({ trees: { ...s.trees, [entryId]: tree! } }))
