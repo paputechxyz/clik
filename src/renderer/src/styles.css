@@ -654,6 +654,30 @@ button { font-family: var(--font-ui); color: inherit; }
 .run-tabs-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 2px; padding: 0 6px 0 4px; }
 .expand-btn.active { background: var(--hover); color: var(--fg); }
 
+/* ---- Terminal tab context menu --------------------------------------- */
+.tab-context-menu {
+  position: fixed; z-index: 70; min-width: 180px;
+  display: flex; flex-direction: column; padding: var(--space-1);
+  background: var(--elevated); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-md);
+  font-family: var(--font-ui);
+  animation: tab-menu-in var(--dur-fast) var(--ease-out);
+}
+@keyframes tab-menu-in {
+  from { opacity: 0; transform: translateY(-2px) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+.tab-context-menu-item {
+  display: flex; align-items: center; text-align: left; width: 100%;
+  padding: var(--space-2) var(--space-3); border: none; background: transparent;
+  color: var(--fg); font-size: var(--text-base); border-radius: var(--radius-sm);
+  cursor: default; white-space: nowrap;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.tab-context-menu-item:hover:not(:disabled) { background: var(--hover); }
+.tab-context-menu-item:active:not(:disabled) { background: var(--hover-strong); }
+.tab-context-menu-item:disabled { color: var(--fg-faint); opacity: 0.5; cursor: default; }
+
 .run-pane { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .run-meta {
   display: flex; align-items: center; gap: var(--space-3);
