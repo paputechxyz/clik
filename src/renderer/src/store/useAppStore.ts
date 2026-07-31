@@ -7,7 +7,9 @@ import type {
   PtyEvent,
   SavedCommandItem,
   HistoryItem,
-  Folder
+  Folder,
+  ExportResult,
+  ImportResult
 } from '../../../shared/types'
 import { buildArgv, commandPreview, configSignature, shellQuote, shellSplit } from '../lib/buildArgv'
 import { parseCommandTokens } from '../lib/parseCommand'
@@ -270,6 +272,8 @@ interface AppState {
   injectCommand: (item: SavedCommandItem) => Promise<void>
   injectHistory: (item: HistoryItem) => Promise<void>
   removeSaved: (id: string) => void
+  exportSaved: () => Promise<ExportResult>
+  importSaved: () => Promise<ImportResult>
   clearHistory: () => void
   renameSaved: (id: string, name: string) => void
   addFolder: (name: string) => void
@@ -688,6 +692,42 @@ export const useAppStore = create<AppState>((set, get) => ({
       persistLibrary(saved, s.history, s.folders)
       return { saved }
     })
+  },
+
+  async exportSaved() {
+    const { saved, folders } = get()
+    return window.clik.library.export({ saved, folders })
+  },
+
+  async importSaved() {
+    const res = await window.clik.library.import()
+    if (!res.ok || !res.saved) return res
+    const importedSaved = res.saved
+    const importedFolders = res.folders ?? []
+    set((s) => {
+      // Merge folders by id first so imported items can resolve their folderId.
+      const folderById = new Map(s.folders.map((f) => [f.id, f]))
+      for (const f of importedFolders) folderById.set(f.id, f)
+      const folders = [...folderById.values()]
+      const folderIds = new Set(folders.map((f) => f.id))
+
+      // Merge saved commands by id: an imported item with an existing id
+      // overrides that item (conflicts resolve in favor of the import); a new
+      // id is appended. Reassign a dangling folderId to root so an imported
+      // item never points at a folder that didn't come along.
+      const savedById = new Map(s.saved.map((it) => [it.id, it]))
+      for (const it of importedSaved) {
+        const folderId = it.folderId && folderIds.has(it.folderId) ? it.folderId : null
+        savedById.set(it.id, { ...it, folderId })
+      }
+      const saved = [...savedById.values()]
+      persistLibrary(saved, s.history, folders)
+      return { saved, folders }
+    })
+    // Re-point imported commands whose entryId doesn't match a local CLI to the
+    // matching registered entry (by name / binary basename), same as on load.
+    relinkOrphans(get, set)
+    return res
   },
 
   clearHistory() {

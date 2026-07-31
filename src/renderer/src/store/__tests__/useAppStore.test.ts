@@ -20,7 +20,7 @@ function fakeTree(label: string): CommandTree {
   }
 }
 
-function installApi(api: Partial<ClikApi>): void {
+function installApi(api: { [K in keyof ClikApi]?: Partial<ClikApi[K]> }): void {
   ;(globalThis as unknown as { window: { clik: ClikApi } }).window = {
     clik: api as unknown as ClikApi
   }
@@ -518,6 +518,92 @@ describe('runnable group commands (group with its own flags)', () => {
     const fv = useAppStore.getState().flagValues
     expect('list' in fv).toBe(true)
     expect(fv.list).toBe(false) // bool default false
+  })
+})
+
+describe('saved-command import/export', () => {
+  const mkSaved = (over: Partial<SavedCommandItem>): SavedCommandItem => ({
+    id: 'x',
+    name: 'x',
+    entryId: '',
+    entryName: '',
+    binaryName: '',
+    selection: [],
+    flags: {},
+    positional: '',
+    preview: '',
+    createdAt: 0,
+    folderId: null,
+    ...over
+  })
+
+  beforeEach(() => {
+    useAppStore.setState({ entries: [], saved: [], history: [], folders: [] })
+  })
+
+  it('exportSaved sends the current saved commands + folders to the main process', async () => {
+    const exportFn = vi.fn(async () => ({ ok: true, count: 1 }))
+    installApi({ library: { export: exportFn, save: async () => undefined } })
+    const saved = [mkSaved({ id: 's1', name: 'one' })]
+    const folders: Folder[] = [{ id: 'f1', name: 'Work' }]
+    useAppStore.setState({ saved, folders })
+    const res = await useAppStore.getState().exportSaved()
+    expect(res.ok).toBe(true)
+    expect(exportFn).toHaveBeenCalledWith({ saved, folders })
+  })
+
+  it('importSaved overrides an existing command on id conflict and appends new ones', async () => {
+    const libSave = vi.fn<(d: LibraryData) => Promise<void>>(async () => undefined)
+    const imported = {
+      ok: true,
+      count: 2,
+      saved: [
+        mkSaved({ id: 's1', name: 'overridden', preview: 'new' }),
+        mkSaved({ id: 's2', name: 'fresh' })
+      ],
+      folders: [] as Folder[]
+    }
+    installApi({ library: { import: async () => imported, save: libSave } })
+    useAppStore.setState({ saved: [mkSaved({ id: 's1', name: 'original', preview: 'old' })] })
+
+    const res = await useAppStore.getState().importSaved()
+    expect(res.ok).toBe(true)
+    const s = useAppStore.getState()
+    expect(s.saved).toHaveLength(2)
+    const s1 = s.saved.find((it) => it.id === 's1')!
+    expect(s1.name).toBe('overridden')
+    expect(s1.preview).toBe('new')
+    expect(s.saved.some((it) => it.id === 's2')).toBe(true)
+    expect(libSave).toHaveBeenCalled()
+  })
+
+  it('importSaved merges folders and drops a dangling folderId to root', async () => {
+    const imported = {
+      ok: true,
+      count: 2,
+      saved: [
+        mkSaved({ id: 's1', name: 'in-folder', folderId: 'f1' }),
+        mkSaved({ id: 's2', name: 'dangling', folderId: 'missing' })
+      ],
+      folders: [{ id: 'f1', name: 'Imported' }] as Folder[]
+    }
+    installApi({ library: { import: async () => imported, save: async () => undefined } })
+    const res = await useAppStore.getState().importSaved()
+    expect(res.ok).toBe(true)
+    const s = useAppStore.getState()
+    expect(s.folders.some((f) => f.id === 'f1')).toBe(true)
+    expect(s.saved.find((it) => it.id === 's1')!.folderId).toBe('f1')
+    expect(s.saved.find((it) => it.id === 's2')!.folderId).toBeNull()
+  })
+
+  it('importSaved leaves state untouched when the dialog is canceled', async () => {
+    const libSave = vi.fn<(d: LibraryData) => Promise<void>>(async () => undefined)
+    installApi({ library: { import: async () => ({ ok: false, canceled: true }), save: libSave } })
+    useAppStore.setState({ saved: [mkSaved({ id: 's1', name: 'keep' })] })
+    const res = await useAppStore.getState().importSaved()
+    expect(res.canceled).toBe(true)
+    expect(useAppStore.getState().saved).toHaveLength(1)
+    expect(libSave).not.toHaveBeenCalled()
   })
 })
 

@@ -31,7 +31,9 @@ const api: ClikApi = {
   },
   library: {
     get: () => ipcRenderer.invoke('library:get'),
-    save: (data) => ipcRenderer.invoke('library:save', data)
+    save: (data) => ipcRenderer.invoke('library:save', data),
+    export: (data) => ipcRenderer.invoke('library:export', data),
+    import: () => ipcRenderer.invoke('library:import')
   },
   pty: {
     open: (req) => ipcRenderer.invoke('pty:open', req),
