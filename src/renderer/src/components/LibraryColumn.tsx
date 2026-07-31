@@ -5,6 +5,8 @@ import {
   ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  ChevronsDownIcon,
+  ChevronsUpIcon,
   ChevronUpIcon,
   FolderIcon,
   InjectIcon,
@@ -192,6 +194,18 @@ export function LibraryColumn(): JSX.Element {
     })
   }
 
+  const allFoldersCollapsed = folders.length > 0 && folders.every((f) => folderCollapse[f.id])
+
+  const toggleAllFolders = (): void => {
+    const collapse = !allFoldersCollapsed
+    setFolderCollapse((prev) => {
+      const next = { ...prev }
+      for (const f of folders) next[f.id] = collapse
+      persist({ folderCollapse: next })
+      return next
+    })
+  }
+
   const onDeleteFolder = (f: Folder): void => {
     const count = saved.filter((it) => it.folderId === f.id).length
     if (count === 0) removeFolder(f.id)
@@ -368,6 +382,15 @@ export function LibraryColumn(): JSX.Element {
               >
                 <FolderIcon />
               </button>
+              {folders.length > 0 && (
+                <button
+                  className="icon-btn small"
+                  title={allFoldersCollapsed ? 'Expand all folders' : 'Collapse all folders'}
+                  onClick={toggleAllFolders}
+                >
+                  {allFoldersCollapsed ? <ChevronsDownIcon /> : <ChevronsUpIcon />}
+                </button>
+              )}
               <button
                 className="icon-btn small"
                 title="Collapse Library column"
