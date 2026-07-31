@@ -56,7 +56,7 @@ app.whenReady().then(() => {
   }
   ipc = registerIpc(() => win)
   buildMenu(() => win)
-  initUpdater(() => win)
+  initUpdater(() => win, { cleanup: () => ipc?.stopAll() })
   createWindow()
 
   app.on('activate', () => {

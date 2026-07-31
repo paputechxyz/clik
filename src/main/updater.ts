@@ -16,7 +16,12 @@ function send(getWin: () => BrowserWindow | null, e: UpdateStatusEvent): void {
   getWin()?.webContents.send('update:status', e)
 }
 
-export function initUpdater(getWin: () => BrowserWindow | null): void {
+export interface UpdaterDeps {
+  // Tears down long-lived resources (PTYs, etc.) before the app relaunches.
+  cleanup: () => void
+}
+
+export function initUpdater(getWin: () => BrowserWindow | null, deps: UpdaterDeps): void {
   ipcMain.handle('app:version', () => app.getVersion())
   ipcMain.handle('update:status:get', () => lastStatus)
 
@@ -71,7 +76,14 @@ export function initUpdater(getWin: () => BrowserWindow | null): void {
     return { ok: true }
   })
   ipcMain.handle('update:restart', () => {
-    autoUpdater.quitAndInstall()
+    // node-pty keeps native worker threads (and child shells) alive. Squirrel's
+    // in-place relaunch replaces the running image mid-flight; if those threads
+    // are torn down abruptly by the handoff, macOS reports the abnormal exit as
+    // a "clik quit unexpectedly" dialog. Dispose our PTYs first, then hand off
+    // on the next tick so the child processes have actually reaped before
+    // quitAndInstall's app.quit() closes the window and Squirrel takes over.
+    deps.cleanup()
+    setImmediate(() => autoUpdater.quitAndInstall())
   })
 
   // Silent auto-check shortly after launch.
