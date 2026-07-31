@@ -19,6 +19,21 @@ const HEADER_RE =
 const FLAG_RE = /^\s+(-(\w),\s+)?--([\w-]+)(?:\s+(\S+))?\s{2,}(.*)$/
 // Accept a single tab (go indents commands with one tab) or 2+ spaces.
 const CHILD_RE = /^(?:\t|\s{2,})([A-Za-z0-9][\w-]*)\*?:?\s+(.*)$/
+// Some CLIs (e.g. orca) print a multi-word subcommand name — "diagnostics
+// memory", "environment add" — as a single help-list entry rather than
+// nesting it under a group header. Require an unambiguous 2+ space gap
+// before the description so this doesn't misread ordinary prose; tried
+// before CHILD_RE (see matchChild) so it only kicks in when CHILD_RE alone
+// would otherwise truncate the name to its first word.
+const CHILD_MULTI_RE = /^(?:\t|\s{2,})([A-Za-z0-9][\w-]*(?:\s[A-Za-z0-9][\w-]*){1,4})\s{2,}(.*)$/
+
+function matchChild(line: string): { name: string; rest: string } | null {
+  const multi = line.match(CHILD_MULTI_RE)
+  if (multi) return { name: multi[1], rest: multi[2] }
+  const single = line.match(CHILD_RE)
+  if (single) return { name: single[1], rest: single[2] }
+  return null
+}
 const SKIP_CHILDREN = new Set(['help', 'completion'])
 const MAX_DEPTH = 6
 // Section headers whose body is a list of subcommands. Cobra uses
@@ -414,18 +429,52 @@ function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+// A "flag-shaped" token: a long flag (--foo) or an angle/bracketed
+// placeholder (<arg>, [--foo]). Used to find where a prefixed child line's
+// name ends and its flag synopsis begins. Deliberately narrower than "starts
+// with [" so trailing yargs hint tags like "[aliases: x]" / "[default]" —
+// which start a bracket but aren't part of a flag synopsis — don't get
+// mistaken for one and swallow the whole prose description as "name".
+const FLAG_TOKEN_RE = /^(?:--[\w]|\[--|\[<|<[\w])/
+const MAX_CHILD_NAME_WORDS = 5
+
 // Parse the remainder of a child line after any binary/path prefix has been
-// stripped, e.g. "add [name]     add an MCP server" -> { add, "add an MCP server" }.
-// Strips a leading positional placeholder ("<url>", "[name]", "[message..]")
-// that yargs prints between the command name and its description, and trailing
-// hint tags like "[aliases: ls]" / "[default]".
+// stripped. Two shapes show up here:
+//  - yargs-style: a single-word name followed by a prose description, e.g.
+//    "completion   generate completion script" -> { completion, "generate
+//    completion script" }.
+//  - flag-synopsis style (e.g. orca's "Common Commands" block): a multi-word
+//    command name with NO prose description at all, immediately followed by
+//    its own flags, e.g. "environment add --name <name> --pairing-code
+//    <code> [--json]" -> { "environment add", "--name <name> ..." }. Taking
+//    only the first word here (the old behavior) collapsed every multi-word
+//    command in that block down to one shared name ("environment"),
+//    colliding four distinct subcommands into duplicate tree nodes.
+// Distinguish the two by scanning for a flag-shaped token: if one appears
+// before any word that looks like ordinary prose, everything before it is
+// the (possibly multi-word) name; otherwise fall back to the single-word
+// yargs behavior so real descriptions are never swallowed as "name".
 function parseChildRest(rest: string): { name: string; short: string } | null {
-  const m = rest.match(/^([A-Za-z0-9][\w-]*)\*?:?\s+(.*)$/)
-  if (!m) return null
-  let short = m[2].trim()
+  const tokenRe = /\S+/g
+  const tokens: { text: string; index: number }[] = []
+  let tm: RegExpExecArray | null
+  while ((tm = tokenRe.exec(rest))) tokens.push({ text: tm[0], index: tm.index })
+  if (tokens.length === 0 || !/^[A-Za-z0-9][\w-]*[*:]?$/.test(tokens[0].text)) return null
+
+  const firstFlagIdx = tokens.findIndex((t, i) => i > 0 && FLAG_TOKEN_RE.test(t.text))
+  const nameWordCount =
+    firstFlagIdx === -1 ? 1 : Math.min(firstFlagIdx, MAX_CHILD_NAME_WORDS)
+
+  const name = tokens
+    .slice(0, nameWordCount)
+    .map((t) => t.text)
+    .join(' ')
+    .replace(/[*:]+$/, '')
+  const shortStart = nameWordCount < tokens.length ? tokens[nameWordCount].index : rest.length
+  let short = rest.slice(shortStart).trim()
   short = short.replace(/^(?:<[^>]+>|\[[^\]]+\])\s{2,}/, '').trim()
   short = short.replace(/\s*\[(?:aliases:[^\]]*|default)\]\s*$/g, '').trim()
-  return { name: m[1], short }
+  return { name, short }
 }
 
 function parseChildren(block: string[], prefixPath?: string[]): { name: string; short: string }[] {
@@ -468,8 +517,8 @@ function parseChildren(block: string[], prefixPath?: string[]): { name: string; 
     }
   } else {
     for (const line of block) {
-      const m = line.match(CHILD_RE)
-      if (m) out.push({ name: m[1], short: m[2].trim() })
+      const m = matchChild(line)
+      if (m) out.push({ name: m.name, short: m.rest.trim() })
     }
   }
 
@@ -544,7 +593,7 @@ export function parseHelp(text: string, prefixPath?: string[]): ParsedHelp {
     }
     headerlessFlags = parseGitUsageFlags(lines, consumed)
 
-    const firstChildIdx = lines.findIndex((l, i) => !consumed.has(i) && CHILD_RE.test(l))
+    const firstChildIdx = lines.findIndex((l, i) => !consumed.has(i) && matchChild(l) !== null)
     const firstFlagIdx = lines.findIndex((l) => GIT_FLAG_START.test(l))
     const cutoff = firstChildIdx !== -1 ? firstChildIdx : firstFlagIdx
     if (cutoff > 0) {
@@ -564,32 +613,35 @@ export function parseHelp(text: string, prefixPath?: string[]): ParsedHelp {
     }
     for (let i = 0; i < lines.length; i++) {
       if (consumed.has(i)) continue
-      const m = lines[i].match(CHILD_RE)
-      if (m) children.push({ name: m[1], short: m[2].trim() })
+      const m = matchChild(lines[i])
+      if (m) children.push({ name: m.name, short: m.rest.trim() })
     }
   }
 
   // pnpm and similar CLIs group commands under non-standard headers like
   // "Manage your dependencies:", "Run your scripts:", ... that aren't
   // recognized as command sections. Only try this when the usage line signals
-  // subcommands ("[command]") so we don't manufacture false children for leaf
-  // CLIs (node, rg, python3) that happen to have indented prose.
-  if (children.length === 0 && /\bcommand\b/i.test(usageLine)) {
+  // subcommands via a bare "<command>"/"[command]" placeholder — not merely
+  // the substring "command" anywhere (e.g. a leaf command's own "--command
+  // <text>" flag) — so we don't manufacture false children for leaf CLIs
+  // (node, rg, python3, or a leaf subcommand like orca's "terminal create")
+  // that happen to have indented prose (a "Notes:"/"Behavior:" section).
+  if (children.length === 0 && /[<[]commands?[>\]]/i.test(usageLine)) {
     for (const [header, block] of sections) {
       const h = header.toLowerCase()
       if (h === 'flags' || h === 'options' || h.endsWith(' options') || h.endsWith(' flags')) continue
-      if (h === 'usage') continue
+      if (h === 'usage' || h === 'notes' || h === 'behavior' || h === 'examples') continue
       // Only accept lines indented at the command-entry level, not deeply-
       // indented continuation lines from multi-line descriptions.
       const matches = block
         .map((l) => ({ line: l, indent: /^\s*/.exec(l)?.[0].length ?? 0 }))
-        .filter((m) => m.indent >= 2 && CHILD_RE.test(m.line))
+        .filter((m) => m.indent >= 2 && matchChild(m.line) !== null)
       if (matches.length < 2) continue
       const minIndent = Math.min(...matches.map((m) => m.indent))
       for (const m of matches) {
         if (m.indent <= minIndent + 4) {
-          const c = m.line.match(CHILD_RE)
-          if (c) children.push({ name: c[1], short: c[2].trim() })
+          const c = matchChild(m.line)
+          if (c) children.push({ name: c.name, short: c.rest.trim() })
         }
       }
     }
@@ -732,13 +784,21 @@ async function buildNode(
   rootHelp: string | undefined,
   parentHelp: string | undefined,
   onTopChildDone?: (childName: string, done: number, total: number) => void,
-  env: Record<string, string> = process.env as Record<string, string>
+  env: Record<string, string> = process.env as Record<string, string>,
+  // Some CLIs (e.g. orca) print a multi-word subcommand name — "diagnostics
+  // memory" — as a single help-list entry rather than nesting it under a
+  // group header. cmdPath still needs each word as its own argv token (so
+  // the --help invocation resolves to a real subcommand instead of a single
+  // malformed argument), but the node should keep displaying the full name
+  // the CLI's own help text used. `label` carries that original text; it
+  // defaults to the last path segment for the common one-word-per-level case.
+  label?: string
 ): Promise<CommandNode> {
   const help = await runHelp(binaryPath, cmdPath, env)
   const baseName = path.basename(binaryPath)
   const prefixPath = cmdPath.length === 0 ? [baseName] : [baseName, ...cmdPath]
   const parsed = parseHelp(help, prefixPath)
-  const name = cmdPath.length ? cmdPath[cmdPath.length - 1] : baseName
+  const name = label ?? (cmdPath.length ? cmdPath[cmdPath.length - 1] : baseName)
 
   // yargs (and other CLIs) fall back to printing a parent's — often the
   // root's — full help when a command has no dedicated help of its own
@@ -763,7 +823,17 @@ async function buildNode(
       // can't be loaded, …) must not abort the whole tree — skip and continue.
       try {
         children.push(
-          await buildNode(binaryPath, [...cmdPath, c.name], c.short, depth + 1, nextRoot, help, onTopChildDone, env)
+          await buildNode(
+            binaryPath,
+            [...cmdPath, ...c.name.split(/\s+/)],
+            c.short,
+            depth + 1,
+            nextRoot,
+            help,
+            onTopChildDone,
+            env,
+            c.name
+          )
         )
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)

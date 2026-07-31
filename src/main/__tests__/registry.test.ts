@@ -35,7 +35,7 @@ describe('Registry.reorder', () => {
   it('ignores unknown ids and keeps unlisted entries at the tail', () => {
     const reg = new Registry()
     const a = reg.add(entry('a'))
-    const b = reg.add(entry('b'))
+    reg.add(entry('b'))
     const c = reg.add(entry('c'))
     // 'b' is unlisted (stays at tail in relative order); 'nope' is unknown.
     reg.reorder([c.id, 'nope', a.id])
