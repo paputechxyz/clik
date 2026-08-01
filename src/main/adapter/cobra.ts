@@ -651,6 +651,32 @@ export function parseHelp(text: string, prefixPath?: string[]): ParsedHelp {
     }
   }
 
+  // Some CLIs (e.g. ccb) have no dedicated commands section at all — they list
+  // subcommands as binary-prefixed lines directly under "Usage:":
+  //     Usage:
+  //       ccb init        Set up backup repo + schedule
+  //       ccb run         Run backup now
+  //       ccb interval <hours>  Change backup interval and reinstall scheduler
+  // When nothing else matched, strip the "<binary path> " prefix (keeping the
+  // indent) and run the plain child matcher over the usage block. A bare
+  // synopsis ("mycli [command]") loses nothing to strip and matchChild rejects
+  // "[command]", so this stays a no-op for the common cobra layout. matchChild
+  // (not the prefixed parseChildRest path) is used deliberately: a description
+  // can embed a flag like ccb's "(use --version <folder> ...)", which
+  // parseChildRest would misread as part of the command name.
+  if (children.length === 0 && prefixPath && prefixPath.length > 0 && usageHeader) {
+    const prefixRe = new RegExp(`^(\\s+)${escapeRe(prefixPath.join(' '))}\\s+`)
+    for (const line of body(usageHeader)) {
+      if (!prefixRe.test(line)) continue
+      const m = matchChild(line.replace(prefixRe, '$1'))
+      if (!m) continue
+      // Drop a leading value placeholder ("<hours>") from the description so it
+      // doesn't leak into the short text (matchChild keeps it as `rest`).
+      const short = m.rest.replace(/^(?:<[^>]+>|\[[^\]]+\])\s{2,}/, '').trim()
+      children.push({ name: m.name, short })
+    }
+  }
+
   // docker uses "Options" / "Global Options" where cobra uses "Flags" /
   // "Global Flags"; accept both so docker subcommands surface their flags.
   // kubectl subcommands use "Options" too but with a different per-flag

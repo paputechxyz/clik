@@ -1,0 +1,12 @@
+ccb — Automatic backup of all Claude Code settings
+
+Usage:
+  ccb init        Set up backup repo + schedule
+  ccb run         Run backup now
+  ccb status      Show backup status
+  ccb interval <hours>  Change backup interval and reinstall scheduler
+  ccb restore     Restore settings from the latest backup (use --version <folder> to restore historical version)
+  ccb uninstall   Remove scheduled backup
+  ccb notify-test Send a test notification banner
+
+Your skills, memories, rules, MCP configs, and settings — all safe.

@@ -52,6 +52,37 @@ describe('parseHelp - root (group)', () => {
   })
 })
 
+describe('parseHelp - ccb (subcommands under Usage, no commands section)', () => {
+  const p = parseHelp(fx('ccb-root.txt'), ['ccb'])
+
+  it('extracts binary-prefixed subcommands listed under Usage:', () => {
+    const names = p.children.map((c) => c.name)
+    expect(names).toEqual([
+      'init',
+      'run',
+      'status',
+      'interval',
+      'restore',
+      'uninstall',
+      'notify-test'
+    ])
+  })
+
+  it('keeps the description and strips a value placeholder from the name', () => {
+    const interval = p.children.find((c) => c.name === 'interval')!
+    expect(interval.short).toBe('Change backup interval and reinstall scheduler')
+    const run = p.children.find((c) => c.name === 'run')!
+    expect(run.short).toBe('Run backup now')
+  })
+
+  it('does not fabricate children without a binary prefix', () => {
+    // Without the prefixPath the usage lines still start with "ccb", but the
+    // fallback needs the prefix to fire; the point is it stays inert for the
+    // common cobra synopsis layout (covered by the root fixture).
+    expect(parseHelp(fx('root.txt')).children.map((c) => c.name)).not.toContain('ccb')
+  })
+})
+
 describe('parseHelp - search (leaf)', () => {
   const p = parseHelp(fx('search.txt'))
 
