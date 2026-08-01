@@ -588,8 +588,15 @@ export function parseHelp(text: string, prefixPath?: string[]): ParsedHelp {
   // description lines out of the child scan), then treat the remaining indented
   // "name  description" lines as children and trim the long description to the
   // intro before the first entry (dropping a leading "usage:" block).
+  // Only treat a headerless dump as a usage/prose command list when it actually
+  // carries a "usage:" synopsis line — the defining feature of both git layouts
+  // this branch targets. Without it, the output isn't help at all: some CLIs
+  // ignore `--help` on leaf commands and print runtime output instead (e.g.
+  // `ccb list --help` dumps a table of backups). Scanning that with matchChild
+  // manufactures a bogus subcommand from every indented "name  value" row.
+  const hasUsageSynopsis = sections.size === 0 && lines.some((l) => /^usage:\s/i.test(l))
   let headerlessFlags: Flag[] = []
-  if (sections.size === 0) {
+  if (hasUsageSynopsis) {
     const consumed = new Set<number>()
     for (let i = 0; i < lines.length; i++) {
       const l = lines[i]

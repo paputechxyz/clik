@@ -1,0 +1,10 @@
+Backups in ~/.claude-backups (11):
+
+  NAME                        WHEN              ITEMS
+  latest                      2026-07-31 22:08     52  (current)
+  backup-2026-07-31_22-08-13  2026-07-31 22:08     52
+  backup-2026-07-31_21-47-44  2026-07-31 21:47     52
+  backup-2026-07-31_16-32-25  2026-07-31 16:32     50
+
+Restore a specific version with:
+  ccb restore --version backup-2026-07-31_22-08-13

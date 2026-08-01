@@ -83,6 +83,18 @@ describe('parseHelp - ccb (subcommands under Usage, no commands section)', () =>
   })
 })
 
+describe('parseHelp - runtime dump (leaf that ignores --help)', () => {
+  // Some CLIs (e.g. ccb) ignore --help on leaf subcommands and print runtime
+  // output instead. That output has no "usage:" synopsis, so the headerless
+  // fallback must NOT treat its indented "name  value" rows (a table of
+  // backups) as subcommands.
+  const p = parseHelp(fx('ccb-list-runtime.txt'), ['ccb', 'list'])
+
+  it('finds no subcommands in an unstructured runtime dump', () => {
+    expect(p.children).toHaveLength(0)
+  })
+})
+
 describe('parseHelp - search (leaf)', () => {
   const p = parseHelp(fx('search.txt'))
 
