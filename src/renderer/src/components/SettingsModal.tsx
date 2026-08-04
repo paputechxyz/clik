@@ -309,44 +309,6 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
             </fieldset>
           )}
 
-          {entries.map((e) => (
-            <fieldset className="entry-fieldset" key={e.id}>
-              <div className="form-row">
-                <label>Name</label>
-                <input
-                  type="text"
-                  className="flag-input"
-                  value={e.name}
-                  onChange={(ev) => updateField(e, { name: ev.target.value })}
-                />
-              </div>
-              <div className="form-row">
-                <label>Binary</label>
-                <input
-                  type="text"
-                  className="flag-input"
-                  value={e.binaryPath}
-                  onChange={(ev) => updateField(e, { binaryPath: ev.target.value })}
-                />
-              </div>
-              <div className="entry-actions">
-                <button
-                  className="ghost-btn"
-                  title="Resolve via which"
-                  onClick={async () => {
-                    const p = await resolveName(e.name)
-                    if (p) updateField(e, { binaryPath: p })
-                  }}
-                >
-                  Resolve
-                </button>
-                <button className="ghost-btn danger" onClick={() => void removeEntry(e.id)}>
-                  Remove
-                </button>
-              </div>
-            </fieldset>
-          ))}
-
           <fieldset className="entry-fieldset">
             <legend className="legend-accent">Add a CLI</legend>
             <div className="form-row">
@@ -395,6 +357,45 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
               </button>
             </div>
           </fieldset>
+
+          {/* Newest first so a freshly added CLI lands right under the form. */}
+          {[...entries].reverse().map((e) => (
+            <fieldset className="entry-fieldset" key={e.id}>
+              <div className="form-row">
+                <label>Name</label>
+                <input
+                  type="text"
+                  className="flag-input"
+                  value={e.name}
+                  onChange={(ev) => updateField(e, { name: ev.target.value })}
+                />
+              </div>
+              <div className="form-row">
+                <label>Binary</label>
+                <input
+                  type="text"
+                  className="flag-input"
+                  value={e.binaryPath}
+                  onChange={(ev) => updateField(e, { binaryPath: ev.target.value })}
+                />
+              </div>
+              <div className="entry-actions">
+                <button
+                  className="ghost-btn"
+                  title="Resolve via which"
+                  onClick={async () => {
+                    const p = await resolveName(e.name)
+                    if (p) updateField(e, { binaryPath: p })
+                  }}
+                >
+                  Resolve
+                </button>
+                <button className="ghost-btn danger" onClick={() => void removeEntry(e.id)}>
+                  Remove
+                </button>
+              </div>
+            </fieldset>
+          ))}
         </div>
       </div>
     </div>
