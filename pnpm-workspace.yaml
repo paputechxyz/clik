@@ -1,0 +1,5 @@
+# pnpm blocks dependency build scripts by default; these two need to run.
+# esbuild downloads its platform binary, node-pty compiles its native addon.
+allowBuilds:
+  esbuild: true
+  node-pty: true
