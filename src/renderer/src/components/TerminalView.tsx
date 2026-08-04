@@ -111,6 +111,12 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const writtenRef = useRef(0)
+  // True once anything has been written to xterm — the initial scrollback
+  // restore OR live-streamed PTY data. Live data bypasses run.output/writtenRef
+  // (it goes straight to term.write via the bus), so writtenRef alone can't tell
+  // whether there's content to clear. This flag is the real "has content" guard
+  // for the clear-scrollback effect below. See the clearRun path in the store.
+  const hasContentRef = useRef(false)
   const restoringRef = useRef(true)
   const [ready, setReady] = useState(false)
 
@@ -190,6 +196,7 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
       restoringRef.current = false
     })
     writtenRef.current = run.output.length
+    hasContentRef.current = run.output.length > 0
     termRef.current = term
     setReady(true)
 
@@ -360,6 +367,7 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
     // the length-based delta returned 'none' forever. The store still
     // accumulates output (batched) for scrollback restore on tab switch.
     const unsubBus = ptyDataBus.subscribe(run.id, (data) => {
+      hasContentRef.current = true
       term.write(data)
     })
 
@@ -388,10 +396,11 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
   useEffect(() => {
     const term = termRef.current
     if (!term || !ready) return
-    if (run.output.length === 0 && writtenRef.current > 0) {
+    if (run.output.length === 0 && hasContentRef.current) {
       restoringRef.current = true
       term.reset()
       writtenRef.current = 0
+      hasContentRef.current = false
       restoringRef.current = false
     }
   }, [run.output, ready])
