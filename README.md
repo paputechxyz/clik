@@ -69,12 +69,12 @@ on restart automatically.
 
 ## Commands
 
-- `npm run dev` — launch the Electron app with hot reload
-- `npm run build` — build main/preload/renderer to `out/`
-- `npm run rebuild` — rebuild native modules (`node-pty`) against Electron's ABI
-- `npm run build:mac` — build a macOS app dir to `dist/`
-- `npm run typecheck` — `tsc --noEmit`
-- `npm test` — run Vitest unit tests
+- `pnpm run dev` — launch the Electron app with hot reload
+- `pnpm run build` — build main/preload/renderer to `out/`
+- `pnpm run rebuild` — rebuild native modules (`node-pty`) against Electron's ABI
+- `pnpm run build:mac` — build a macOS app dir to `dist/`
+- `pnpm run typecheck` — `tsc --noEmit`
+- `pnpm test` — run Vitest unit tests
 
 ## Architecture
 
@@ -92,7 +92,7 @@ xterm → PTY (so `Ctrl+C` is delivered by the kernel's line discipline), and
 closing a tab kills the PTY (SIGHUP). `--help` discovery and shell-env capture
 use `child_process.spawn` with `shell: false`.
 
-`node-pty` is a C++ native module — `npm run rebuild` rebuilds it against the
+`node-pty` is a C++ native module — `pnpm run rebuild` rebuilds it against the
 installed Electron (also runs on `postinstall`), and it is unpacked from the
 asar at package time (`build.asarUnpack` in `package.json`).
 

@@ -1,5 +1,5 @@
 // One-command release: bump semver -> build -> sign -> commit -> tag -> push -> publish.
-// Usage: npm run release [patch|minor|major]   (default: patch)
+// Usage: pnpm run release [patch|minor|major]   (default: patch)
 // Requires GH_TOKEN (or an authenticated `gh`) for the publish step.
 import { execSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
@@ -94,8 +94,8 @@ run('git push --tags')
 // Releases in one phase. The single-phase build is required because the
 // prepackaged flow skips writing app-update.yml, which electron-updater needs
 // at runtime to know where to check for updates.
-run('npm run build')
-run('electron-builder --mac --arm64 --publish always')
+run('pnpm run build')
+run('pnpm exec electron-builder --mac --arm64 --publish always')
 
 // electron-builder publishes as a draft by default; promote it to the public
 // "latest" release so the README link and the in-app updater can find it.

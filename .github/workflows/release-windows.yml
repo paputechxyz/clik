@@ -5,7 +5,7 @@ name: Release (Windows)
 #
 # Why CI and not local: node-pty is a C++ native module and cannot be
 # cross-compiled from macOS to Windows (electron-builder emits a broken
-# binary). The version tag is pushed by `npm run release` on macOS; this
+# binary). The version tag is pushed by `pnpm run release` on macOS; this
 # workflow fires automatically and publishes to the same tag-keyed release.
 on:
   push:
@@ -25,19 +25,21 @@ jobs:
         with:
           persist-credentials: false
 
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
+          cache: pnpm
 
       # postinstall runs electron-rebuild, which compiles node-pty for the
       # Windows Electron ABI natively on this runner.
-      - run: npm ci
+      - run: pnpm install --frozen-lockfile
 
       - name: Build main/preload/renderer
-        run: npm run build
+        run: pnpm run build
 
       - name: Package & publish Windows installer
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx electron-builder --win --x64 --publish always
+        run: pnpm exec electron-builder --win --x64 --publish always
