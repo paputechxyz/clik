@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type DragEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from 'react'
 import type { Folder, SavedCommandItem } from '../../../shared/types'
 import { useAppStore } from '../store/useAppStore'
 import {
@@ -75,8 +75,14 @@ type DropHint =
   | { type: 'folder'; id: string; edge: 'before' | 'after' }
   | { type: 'into'; folderId: string }
 
+// A command drag carries every selected command (`ids`); a folder drag carries
+// just that folder. `id` is the row the drag started on.
+type DragState =
+  | { kind: 'command'; id: string; ids: string[] }
+  | { kind: 'folder'; id: string; ids: string[] }
+
 interface DndProps {
-  drag: { kind: 'command' | 'folder'; id: string } | null
+  drag: DragState | null
   dropHint: DropHint | null
   onCommandDragStart: (e: DragEvent, item: SavedCommandItem) => void
   onCommandDragOver: (e: DragEvent, item: SavedCommandItem) => void
@@ -161,10 +167,67 @@ export function LibraryColumn(): JSX.Element {
   const renameFolder = useAppStore((s) => s.renameFolder)
   const removeFolder = useAppStore((s) => s.removeFolder)
   const renameSaved = useAppStore((s) => s.renameSaved)
-  const moveCommand = useAppStore((s) => s.moveCommand)
+  const moveCommands = useAppStore((s) => s.moveCommands)
   const reorderFolders = useAppStore((s) => s.reorderFolders)
 
   const rootItems = saved.filter((it) => (it.folderId ?? null) === null)
+
+  // ---- multi-select ------------------------------------------------------
+  // Cmd/Ctrl-click toggles a row, Shift-click selects a range over the rows as
+  // they appear on screen; a plain click selects one row and loads it.
+  const [selected, setSelected] = useState<string[]>([])
+  const anchorRef = useRef<string | null>(null)
+  const selectedSet = useMemo(() => new Set(selected), [selected])
+
+  const visibleIds = useMemo(() => {
+    const ids = saved.filter((it) => (it.folderId ?? null) === null).map((it) => it.id)
+    for (const f of folders) {
+      if (folderCollapse[f.id]) continue
+      for (const it of saved) if (it.folderId === f.id) ids.push(it.id)
+    }
+    return ids
+  }, [saved, folders, folderCollapse])
+
+  // Drop rows that no longer exist (deleted, or folder deleted with them).
+  useEffect(() => {
+    setSelected((prev) => {
+      const live = prev.filter((id) => saved.some((it) => it.id === id))
+      return live.length === prev.length ? prev : live
+    })
+  }, [saved])
+
+  useEffect(() => {
+    if (selected.length === 0) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setSelected([])
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [selected.length])
+
+  const onRowClick = (item: SavedCommandItem, e: MouseEvent): void => {
+    if (e.metaKey || e.ctrlKey) {
+      anchorRef.current = item.id
+      setSelected((prev) => (prev.includes(item.id) ? prev.filter((id) => id !== item.id) : [...prev, item.id]))
+      return
+    }
+    if (e.shiftKey && anchorRef.current !== null) {
+      const from = visibleIds.indexOf(anchorRef.current)
+      const to = visibleIds.indexOf(item.id)
+      if (from !== -1 && to !== -1) {
+        const [a, b] = from <= to ? [from, to] : [to, from]
+        setSelected(visibleIds.slice(a, b + 1))
+        return
+      }
+    }
+    anchorRef.current = item.id
+    setSelected([item.id])
+    void loadCommand(item)
+  }
+
+  const clearSelectionOnBlankClick = (e: MouseEvent): void => {
+    if ((e.target as HTMLElement).closest('.lib-item, .lib-folder-head') === null) setSelected([])
+  }
 
   const beginRename = (target: EditTarget, currentName: string): void => {
     setEditing(target)
@@ -213,7 +276,7 @@ export function LibraryColumn(): JSX.Element {
   }
 
   // ---- drag-and-drop (plan U3, native HTML5 DnD) -------------------------
-  const [drag, setDrag] = useState<{ kind: 'command' | 'folder'; id: string } | null>(null)
+  const [drag, setDrag] = useState<DragState | null>(null)
   const [dropHint, setDropHint] = useState<DropHint | null>(null)
 
   const endDrag = (): void => {
@@ -222,13 +285,23 @@ export function LibraryColumn(): JSX.Element {
   }
 
   const onCommandDragStart = (e: DragEvent, item: SavedCommandItem): void => {
-    setDrag({ kind: 'command', id: item.id })
+    // Dragging a row inside a multi-selection moves the whole selection (in
+    // saved[] order); dragging any other row narrows the selection to it.
+    let ids = [item.id]
+    if (selectedSet.has(item.id) && selected.length > 1) {
+      ids = saved.filter((it) => selectedSet.has(it.id)).map((it) => it.id)
+    } else {
+      anchorRef.current = item.id
+      setSelected(ids)
+    }
+    setDrag({ kind: 'command', id: item.id, ids })
     e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('text/plain', item.id)
+    e.dataTransfer.setData('text/plain', ids.join('\n'))
   }
 
   const onCommandDragOver = (e: DragEvent, item: SavedCommandItem): void => {
     if (!drag || drag.kind !== 'command') return
+    if (drag.ids.includes(item.id)) return
     e.preventDefault()
     e.stopPropagation()
     e.dataTransfer.dropEffect = 'move'
@@ -239,25 +312,31 @@ export function LibraryColumn(): JSX.Element {
 
   const onCommandDrop = (e: DragEvent, item: SavedCommandItem): void => {
     if (!drag || drag.kind !== 'command') return
+    if (drag.ids.includes(item.id)) {
+      endDrag()
+      return
+    }
     e.preventDefault()
     e.stopPropagation()
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
     const before = e.clientY < rect.top + rect.height / 2
     const location = item.folderId ?? null
-    // Index in the destination location, EXCLUDING the dragged item, so
+    // Index in the destination location, EXCLUDING the dragged items, so
     // placeInLocation lands in the right slot for same-location reorders.
-    const destItems = saved.filter((it) => (it.folderId ?? null) === location && it.id !== drag.id)
+    const destItems = saved.filter(
+      (it) => (it.folderId ?? null) === location && !drag.ids.includes(it.id)
+    )
     const targetIndex = destItems.findIndex((it) => it.id === item.id)
     if (targetIndex === -1) {
       endDrag()
       return
     }
-    moveCommand(drag.id, location, before ? targetIndex : targetIndex + 1)
+    moveCommands(drag.ids, location, before ? targetIndex : targetIndex + 1)
     endDrag()
   }
 
   const onFolderDragStart = (e: DragEvent, f: Folder): void => {
-    setDrag({ kind: 'folder', id: f.id })
+    setDrag({ kind: 'folder', id: f.id, ids: [f.id] })
     e.dataTransfer.effectAllowed = 'move'
     e.dataTransfer.setData('text/plain', f.id)
   }
@@ -278,8 +357,8 @@ export function LibraryColumn(): JSX.Element {
     e.preventDefault()
     e.stopPropagation()
     if (drag.kind === 'command') {
-      const count = saved.filter((it) => it.folderId === f.id).length
-      moveCommand(drag.id, f.id, count) // append to folder end
+      const count = saved.filter((it) => it.folderId === f.id && !drag.ids.includes(it.id)).length
+      moveCommands(drag.ids, f.id, count) // append to folder end
     } else if (drag.id !== f.id) {
       const dest = folders.filter((x) => x.id !== drag.id)
       const targetIndex = dest.findIndex((x) => x.id === f.id)
@@ -302,8 +381,10 @@ export function LibraryColumn(): JSX.Element {
   const onListDrop = (e: DragEvent): void => {
     if (!drag || drag.kind !== 'command') return
     e.preventDefault()
-    const count = saved.filter((it) => (it.folderId ?? null) === null).length
-    moveCommand(drag.id, null, count)
+    const count = saved.filter(
+      (it) => (it.folderId ?? null) === null && !drag.ids.includes(it.id)
+    ).length
+    moveCommands(drag.ids, null, count)
     endDrag()
   }
 
@@ -405,7 +486,7 @@ export function LibraryColumn(): JSX.Element {
           )}
         </div>
         {!savedCollapsed && (
-          <div className="lib-body">
+          <div className="lib-body" onClick={clearSelectionOnBlankClick}>
             {saved.length === 0 && folders.length === 0 ? (
               <div className="lib-empty">Saved commands appear here. Use the Save button next to Run.</div>
             ) : (
@@ -435,7 +516,8 @@ export function LibraryColumn(): JSX.Element {
                     beginRename={beginRename}
                     commitRename={commitRename}
                     cancelRename={cancelRename}
-                    onLoad={loadCommand}
+                    onRowClick={onRowClick}
+                    selectedIds={selectedSet}
                     onInject={injectCommand}
                     onRemove={removeSaved}
                     {...dnd}
@@ -454,7 +536,8 @@ export function LibraryColumn(): JSX.Element {
                     beginRename={beginRename}
                     commitRename={commitRename}
                     cancelRename={cancelRename}
-                    onLoad={loadCommand}
+                    onRowClick={onRowClick}
+                    selectedIds={selectedSet}
                     onInject={injectCommand}
                     onRemove={removeSaved}
                     onDelete={onDeleteFolder}
@@ -551,7 +634,8 @@ interface RowSharedProps {
   beginRename: (target: EditTarget, currentName: string) => void
   commitRename: () => void
   cancelRename: () => void
-  onLoad: (item: { entryId: string; selection: string[]; flags: Record<string, unknown>; positional: string }) => Promise<void>
+  onRowClick: (item: SavedCommandItem, e: MouseEvent) => void
+  selectedIds: Set<string>
   onInject: (item: SavedCommandItem) => void
   onRemove: (id: string) => void
 }
@@ -565,7 +649,8 @@ function SavedCommandRow({
   beginRename,
   commitRename,
   cancelRename,
-  onLoad,
+  onRowClick,
+  selectedIds,
   onInject,
   onRemove,
   onCommandDragStart,
@@ -575,10 +660,12 @@ function SavedCommandRow({
   dropHint
 }: RowSharedProps & DndProps & { item: SavedCommandItem; indent: number }): JSX.Element {
   const isEditing = editing?.kind === 'command' && editing.id === item.id
+  const isSelected = selectedIds.has(item.id)
   const hint = dropHint?.type === 'command' && dropHint.id === item.id ? ` drop-${dropHint.edge}` : ''
   return (
     <li
-      className={`lib-item${isEditing ? ' editing' : ''}${hint}`}
+      className={`lib-item${isEditing ? ' editing' : ''}${isSelected ? ' selected' : ''}${hint}`}
+      aria-selected={isSelected}
       draggable={!isEditing}
       onDragStart={(e) => onCommandDragStart(e, item)}
       onDragEnd={endDrag}
@@ -587,7 +674,7 @@ function SavedCommandRow({
       title={item.preview}
       style={indent ? { paddingLeft: `calc(var(--space-3) + ${indent * 12}px)` } : undefined}
     >
-      <button className="lib-item-main" onClick={() => void onLoad(item)}>
+      <button className="lib-item-main" onClick={(e) => onRowClick(item, e)}>
         {isEditing ? (
           <RenameInput value={draft} onChange={setDraft} onCommit={commitRename} onCancel={cancelRename} />
         ) : (
@@ -644,7 +731,8 @@ function FolderGroup({
   beginRename,
   commitRename,
   cancelRename,
-  onLoad,
+  onRowClick,
+  selectedIds,
   onInject,
   onRemove,
   onDelete,
@@ -713,7 +801,8 @@ function FolderGroup({
               beginRename={beginRename}
               commitRename={commitRename}
               cancelRename={cancelRename}
-              onLoad={onLoad}
+              onRowClick={onRowClick}
+              selectedIds={selectedIds}
               onInject={onInject}
               onRemove={onRemove}
               drag={drag}
