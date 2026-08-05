@@ -237,6 +237,9 @@ export interface ClikApi {
     onStatus: (cb: (e: UpdateStatusEvent) => void) => () => void
     status: () => Promise<UpdateStatusEvent | null>
   }
+  clipboard: {
+    writeText: (text: string) => Promise<void>
+  }
   preferences: {
     get: () => Promise<PreferencesData>
     dismissUpdate: (version: string) => Promise<PreferencesData>

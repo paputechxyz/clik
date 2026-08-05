@@ -8,6 +8,8 @@ import { useAppStore } from '../store/useAppStore'
 import { ptyDataBus } from '../lib/pty-events'
 import { translateEditKey, computeCursorDelta } from '../lib/term-keys'
 import { ChevronUpIcon, ChevronDownIcon, CloseIcon } from './icons'
+import { ContextMenu } from './ContextMenu'
+import type { ContextMenuItem } from './ContextMenu'
 
 // Highlight colors (sRGB hex — xterm decorations require #RRGGBB). Dim for all
 // matches, bright accent for the active match. These echo the cobalt tokens.
@@ -120,6 +122,10 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
   const restoringRef = useRef(true)
   const [ready, setReady] = useState(false)
 
+  // Right-click menu over the terminal; `text` is the selection captured at the
+  // moment of the click (the menu acts on that snapshot, not on later state).
+  const [selMenu, setSelMenu] = useState<{ x: number; y: number; text: string } | null>(null)
+
   const [searchOpen, setSearchOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [matchCount, setMatchCount] = useState(0)
@@ -175,6 +181,9 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
       },
       scrollback: 5000,
       convertEol: true,
+      // Defaults to true on macOS, which would replace the user's highlight with
+      // the word under the pointer just as our selection context menu opens.
+      rightClickSelectsWord: false,
       cursorBlink: true,
       allowProposedApi: true
     })
@@ -490,6 +499,31 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
     applyQuery(value)
   }
 
+  function onTermContextMenu(e: React.MouseEvent): void {
+    e.preventDefault()
+    const text = termRef.current?.getSelection() ?? ''
+    setSelMenu({ x: e.clientX, y: e.clientY, text: text.trim() })
+  }
+
+  const selMenuItems: ContextMenuItem[] = [
+    {
+      label: 'Copy',
+      disabled: !selMenu?.text,
+      onClick: () => {
+        if (selMenu?.text) void window.clik.clipboard.writeText(selMenu.text)
+      }
+    },
+    {
+      label: 'Add to Saved',
+      disabled: !selMenu?.text,
+      onClick: () => {
+        // Same path as the Saved panel's + button: the selection becomes a raw
+        // saved command.
+        if (selMenu?.text) useAppStore.getState().addRawCommand(selMenu.text)
+      }
+    }
+  ]
+
   function toggleCase(): void {
     const next = !caseSensitive
     setCaseSensitive(next)
@@ -499,7 +533,7 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
 
   return (
     <div className="term-host-wrap">
-      <div className="term-host" ref={containerRef} />
+      <div className="term-host" ref={containerRef} onContextMenu={onTermContextMenu} />
       {searchOpen && (
         <div className="term-search">
           <button
@@ -547,6 +581,14 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
             <CloseIcon />
           </button>
         </div>
+      )}
+      {selMenu && (
+        <ContextMenu
+          x={selMenu.x}
+          y={selMenu.y}
+          items={selMenuItems}
+          onClose={() => setSelMenu(null)}
+        />
       )}
     </div>
   )

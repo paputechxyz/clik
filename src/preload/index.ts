@@ -73,6 +73,9 @@ const api: ClikApi = {
       }
     }
   },
+  clipboard: {
+    writeText: (text) => ipcRenderer.invoke('clipboard:writeText', text)
+  },
   preferences: {
     get: () => ipcRenderer.invoke('prefs:get'),
     dismissUpdate: (version) => ipcRenderer.invoke('prefs:setDismissedUpdate', version)

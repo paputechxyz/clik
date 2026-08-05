@@ -1,4 +1,4 @@
-import { app, ipcMain, dialog } from 'electron'
+import { app, ipcMain, dialog, clipboard } from 'electron'
 import os from 'node:os'
 import nodePath from 'node:path'
 import fs from 'node:fs'
@@ -199,6 +199,13 @@ export function registerIpc(getWin: () => BrowserWindow | null): IpcCleanup {
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) }
     }
+  })
+
+  // Copy via the main process rather than navigator.clipboard: the renderer
+  // loads from file:// in packaged builds, where the async clipboard API is
+  // unavailable.
+  ipcMain.handle('clipboard:writeText', (_e, text: string) => {
+    clipboard.writeText(String(text))
   })
 
   ipcMain.handle('prefs:get', () => preferences.get())
