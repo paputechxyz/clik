@@ -113,32 +113,33 @@ function persistLibrary(saved: SavedCommandItem[], history: HistoryItem[], folde
   })
 }
 
-// Reposition a command into a folder (null = root) at a 0-based index within
-// that location. The `saved[]` array is the single source of truth for order;
-// within-location order is array position scoped by folderId (plan KTD2).
+// Reposition one or more commands into a folder (null = root) at a 0-based
+// index within that location. The `saved[]` array is the single source of truth
+// for order; within-location order is array position scoped by folderId (plan
+// KTD2). Moved items keep their relative order and land as one contiguous block.
 function placeInLocation(
   saved: SavedCommandItem[],
-  id: string,
+  ids: string[],
   folderId: string | null,
   index: number
 ): SavedCommandItem[] {
-  const without = saved.filter((it) => it.id !== id)
-  const moved = saved.find((it) => it.id === id)
-  if (!moved) return saved
-  const item: SavedCommandItem = { ...moved, folderId }
+  const idSet = new Set(ids)
+  const moved = saved.filter((it) => idSet.has(it.id)).map((it) => ({ ...it, folderId }))
+  if (moved.length === 0) return saved
+  const without = saved.filter((it) => !idSet.has(it.id))
   const result: SavedCommandItem[] = []
   let placed = false
   let seen = 0
   for (const it of without) {
     const sameLocation = (it.folderId ?? null) === folderId
     if (sameLocation && !placed && seen >= index) {
-      result.push(item)
+      result.push(...moved)
       placed = true
     }
     result.push(it)
     if (sameLocation) seen++
   }
-  if (!placed) result.push(item)
+  if (!placed) result.push(...moved)
   return result
 }
 
@@ -280,6 +281,7 @@ interface AppState {
   renameFolder: (id: string, name: string) => void
   removeFolder: (id: string) => void
   moveCommand: (id: string, folderId: string | null, index: number) => void
+  moveCommands: (ids: string[], folderId: string | null, index: number) => void
   reorderFolders: (fromIndex: number, toIndex: number) => void
   loadCommand: (item: {
     entryId: string
@@ -778,8 +780,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   moveCommand(id, folderId, index) {
+    get().moveCommands([id], folderId, index)
+  },
+
+  moveCommands(ids, folderId, index) {
     set((s) => {
-      const saved = placeInLocation(s.saved, id, folderId, index)
+      const saved = placeInLocation(s.saved, ids, folderId, index)
       persistLibrary(saved, s.history, s.folders)
       return { saved }
     })

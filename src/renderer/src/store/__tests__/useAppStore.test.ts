@@ -204,6 +204,22 @@ describe('library folders, move/reorder, migration behavior', () => {
     expect(folderItems).toEqual(['f1a'])
   })
 
+  it('moveCommands reorders a multi-selection as one block, keeping relative order', () => {
+    useAppStore.setState({ saved: [saved('r1'), saved('r2'), saved('r3'), saved('r4')] })
+    // Drop r1 + r3 above r2 (index 0 of root excluding the dragged items).
+    useAppStore.getState().moveCommands(['r3', 'r1'], null, 0)
+    const rootItems = useAppStore.getState().saved.map((it) => it.id)
+    expect(rootItems).toEqual(['r1', 'r3', 'r2', 'r4'])
+  })
+
+  it('moveCommands can move a mixed selection into a folder', () => {
+    useAppStore.setState({ saved: [saved('r1'), saved('f1a', 'f1'), saved('r2'), saved('f2a', 'f2')] })
+    useAppStore.getState().moveCommands(['r1', 'f2a'], 'f1', 1)
+    const s = useAppStore.getState()
+    expect(s.saved.filter((it) => it.folderId === 'f1').map((it) => it.id)).toEqual(['f1a', 'r1', 'f2a'])
+    expect(s.saved.filter((it) => it.folderId === null).map((it) => it.id)).toEqual(['r2'])
+  })
+
   it('reorderFolders moves a folder within the folder list', () => {
     const folders: Folder[] = [
       { id: 'a', name: 'A' },
