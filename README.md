@@ -23,6 +23,8 @@ Two builds are published with every release:
   and drag **CLIk** to your Applications folder.
 - **Windows (x64)** — grab the `CLIk-<version>-setup.exe` installer and run it.
 
+     
+
 > **macOS — unsigned build, one-time bypass.** CLIk is not code-signed or
 > notarized, so macOS Gatekeeper will block the first launch ("cannot be
 > opened because the developer cannot be verified", or a misleading "is
