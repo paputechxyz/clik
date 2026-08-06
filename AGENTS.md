@@ -41,8 +41,9 @@ the arch matches.
 
 - Electron main/preload compile to CommonJS; do not set `"type": "module"`.
 - Never spawn with `shell: true`. The only `child_process.spawn` sites are
-  `--help` discovery (`adapter/cobra.ts`) and shell-env capture (`shell-env.ts`);
-  both pass an argv array with `shell: false`. Runs execute in a PTY, not spawn.
+  `--help` discovery (`adapter/cobra.ts`), the oclif probe (`adapter/oclif.ts`)
+  and shell-env capture (`shell-env.ts`); all pass an argv array with
+  `shell: false`. Runs execute in a PTY, not spawn.
 - Renderer talks to main only through `window.clik` (contextBridge).
   contextIsolation is on; nodeIntegration is off. Do not bypass.
 - Shared types live in `src/shared/types.ts` and are imported by all three
@@ -50,6 +51,22 @@ the arch matches.
 - The cobra adapter is a pure-ish module: `parseHelp(text)` has no side effects
   and is unit-tested from `--help` fixtures under
   `src/main/adapter/__tests__/fixtures/`. `discoverTree` shells out.
+- Discovery has two routes, picked in `adapter/index.ts`. An oclif CLI carrying
+  @oclif/plugin-commands describes itself: one `<bin> commands --json` returns
+  every command with typed flag definitions, so `sf`'s 270 commands arrive in
+  ~1.5s instead of the ~330 sequential `--help` spawns (minutes) the scrape
+  needs, and the JSON also holds what help text omits (aliases like
+  `plugins add`, enum `options`, `required`). The route is gated on the root
+  help's shape (`looksLikeOclif`) so `commands --json` never runs against a CLI
+  that isn't oclif. Everything else — and any oclif CLI without that plugin —
+  falls back to the recursive `--help` scrape, which understands the oclif
+  layout too (`TOPICS` + `COMMANDS`, entries prefixed with the command path,
+  `--name=<value>` flag tables).
+- Help capture prefers stdout and only falls back to stderr when stdout carries
+  no help body (`looksLikeHelpBody`). Merging the two fed `sf`'s node
+  diagnostics into the parser, and their indented `name:`/`root:`/`type:` lines
+  joined the tree as subcommands of every group — 350 phantom nodes, each one
+  costing a `--help` spawn.
 - macOS-first. Title bar uses `hiddenInset` (macOS only; guarded by a
   platform check). Closing a run tab must kill its PTY (`PtyManager.kill` /
   `pty:kill`, SIGHUP).

@@ -68,8 +68,13 @@ const MAX_DEPTH = 6
 // "command(s)" (covers "Subcommands provided by plugins" too) and exclude
 // sections that look command-like but aren't (docker's "Invalid Plugins",
 // jq's "Command options").
+// oclif (Salesforce CLI, Heroku CLI) splits the list in two: "COMMANDS" holds
+// the runnable leaves and "TOPICS" the groups, so both have to be walked. The
+// match is on the exact header — gh's "HELP TOPICS" lists prose help articles
+// ("gh help exit-codes"), not commands, and must stay out.
 function isCommandsSection(header: string): boolean {
   const h = header.toLowerCase()
+  if (h === 'topics') return true
   if (h.includes('invalid plugins')) return false
   if (h.includes('option') || h.includes('flag')) return false
   return h.includes('command')
@@ -426,7 +431,83 @@ function parseGlabFlags(block: string[]): Flag[] {
   return out
 }
 
+// oclif (Salesforce CLI, Heroku CLI) attaches the value placeholder to the long
+// form with "=", writes the default *inside* the description, and lists an
+// enum's accepted values on a trailing "<options: …>" line:
+//     -q, --query=<value>           SOQL query to execute.
+//     -r, --result-format=<option>  [default: human] Format to display the
+//                                   results; the --json flag overrides this.
+//                                   <options: human|csv|json>
+//     -t, --use-tooling-api         Use Tooling API so you can run queries on
+//                                   Tooling API objects.
+//         --api-version=<value>     Override the api version.
+//         --tests=<value>...        Apex tests to run.
+// When a description is long, oclif drops it to the line(s) below the flag
+// instead of aligning a second column:
+//     -n, --name=<value>
+//         (required) Display name for the data library (max 80 characters).
+// Either way each entry starts on a flag line, so foldLines can rejoin them.
+const OCLIF_FLAG_RE =
+  /^\s{2,}(?:-([A-Za-z]),\s+)?--([\w-]+)(?:=(<[a-z]+>|\S+))?(\.\.\.)?(?:\s+(.*))?$/
+// A flag line ends either at a 2+ space column gap (inline description) or at
+// the end of the line (description below). Requiring one of the two keeps a
+// wrapped description that happens to begin with a long flag name — "(either
+// --installation-key or\n --installation-key-bypass is required)" — from being
+// folded as an entry of its own.
+const OCLIF_FLAG_START = /^\s{2,}(?:-[A-Za-z],\s+)?--[\w-]+(?:=\S+)?(?:\s{2,}\S|\s*$)/
+
+// The "=<value>" / "=<option>" placeholder is oclif's signature; none of the
+// other layouts here writes one. Checked before the yargs detector, which the
+// "[default: …]" inside an oclif description would otherwise trip.
+function looksLikeOclifFlags(block: string[]): boolean {
+  return block.some((l) => /^\s{2,}(?:-[A-Za-z],\s+)?--[\w-]+=<(?:value|option)>/.test(l))
+}
+
+// Squeeze the column padding out of a folded description and un-wrap the
+// "<options: a|b|c>" list, whose pipe-separated values oclif hard-wraps
+// mid-token ("<options: clover|cobertura|html-spa|htm l|json|…>").
+function tidyOclifUsage(usage: string): string {
+  return usage
+    .replace(/\s{2,}/g, ' ')
+    .replace(/<options:\s*([^>]*)>/, (_m, body: string) => `<options: ${body.replace(/\s+/g, '')}>`)
+    .trim()
+}
+
+function parseOclifFlags(block: string[]): Flag[] {
+  const out: Flag[] = []
+  for (const line of foldLines(block, (l) => OCLIF_FLAG_START.test(l))) {
+    const m = line.match(OCLIF_FLAG_RE)
+    if (!m) continue
+    const shorthand = m[1]
+    const name = m[2]
+    const placeholder = m[3]
+    const multiple = m[4] !== undefined
+    let usage = (m[5] ?? '').trim()
+
+    let rawDefault: string | undefined
+    const dm = usage.match(/\[default:\s*([^\]]*)\]\s*/)
+    if (dm && dm.index !== undefined) {
+      rawDefault = dm[1].replace(/\s+/g, ' ').trim()
+      usage = (usage.slice(0, dm.index) + usage.slice(dm.index + dm[0].length)).trim()
+    }
+
+    // No type token to read: a flag with no placeholder is a switch, a repeatable
+    // one takes a list, and everything else is text unless its default proves
+    // otherwise (`--wait=<value>  [default: 33]`).
+    let type: FlagType = 'string'
+    if (multiple) type = 'stringSlice'
+    else if (placeholder === undefined) type = 'bool'
+    else if (rawDefault !== undefined && /^-?\d+$/.test(rawDefault)) type = 'int'
+    else if (rawDefault !== undefined && /^-?\d*\.\d+$/.test(rawDefault)) type = 'float'
+
+    const def = rawDefault !== undefined ? coerceDefault(type, rawDefault) : undefined
+    out.push({ name, shorthand, type, usage: tidyOclifUsage(usage), default: def, rawDefault })
+  }
+  return out
+}
+
 function parseFlagsAuto(block: string[]): Flag[] {
+  if (looksLikeOclifFlags(block)) return parseOclifFlags(block)
   if (looksLikeShortFlags(block)) return parseShortFlags(block)
   if (looksLikeYargsFlags(block)) return parseYargsFlags(block)
   if (looksLikeKubectlFlags(block)) return parseKubectlFlags(block)
@@ -572,6 +653,29 @@ function parseChildRest(rest: string): { name: string; short: string } | null {
   return { name, short }
 }
 
+// A command list is a two-column layout, so a line indented past the column the
+// names start in continues the description above it rather than naming a command
+// of its own:
+//     cmdt   Generate a field for a custom metadata type based on the
+//            provided field type.
+// Fold those back onto their entry — otherwise the description is truncated at
+// the wrap and "provided" joins the tree as a subcommand.
+function foldEntryLines(block: string[], isEntry: (line: string) => boolean): string[] {
+  const out: string[] = []
+  let column = -1
+  for (const line of block) {
+    if (line.trim() === '') continue
+    const indent = /^[ \t]*/.exec(line)![0].length
+    if (isEntry(line) && (column === -1 || indent <= column)) {
+      if (column === -1) column = indent
+      out.push(line)
+    } else if (out.length > 0 && indent > column) {
+      out[out.length - 1] += ' ' + line.trim()
+    }
+  }
+  return out
+}
+
 function parseChildren(block: string[], prefixPath?: string[]): { name: string; short: string }[] {
   // gcloud (and other man-page-style CLIs) put the name on one indented line
   // and the description on the next (more-indented) line:
@@ -596,37 +700,62 @@ function parseChildren(block: string[], prefixPath?: string[]): { name: string; 
   }
 
   const out: { name: string; short: string }[] = []
-  const prefix = prefixPath && prefixPath.length > 0 ? prefixPath.join(' ') : ''
-  // yargs prefixes every command line with the binary (and parent path), e.g.
-  // "  opencode completion   generate..." or "  opencode mcp add   add an MCP
-  // server". When that prefix is the layout, only accept lines that carry it;
-  // otherwise fall back to cobra's bare-name layout ("  search   Search...").
-  // The test is a majority of the entry lines rather than merely one of them:
-  // a bare-name block can contain a single prefixed line without being in this
-  // layout at all. glab's `snippet` block is exactly that — a subcommand whose
-  // usage string spans two lines gets its overflow re-printed with the full
-  // path, and treating that lone line as the layout dropped every real entry:
+  // Some CLIs repeat the command path on every entry line instead of listing
+  // bare child names. yargs repeats the binary too — "  opencode completion
+  // generate..." / "  opencode mcp add   add an MCP server" — while oclif
+  // starts at the first topic — "  agent adl create  Create an Agentforce Data
+  // Library." under `sf agent adl`. Both print the whole path, so those are the
+  // only two candidates; an arbitrary suffix ("adl file", "file") would let a
+  // child that happens to be named after its parent's last segment get eaten.
+  // Longest first, so the shorter form can't take a bite out of the longer one.
+  const segs = prefixPath ?? []
+  const prefixRes = [segs.join(' '), segs.slice(1).join(' ')]
+    .filter((p) => p !== '')
+    .map((p) => new RegExp(`^\\s{2,}${escapeRe(p)}\\s+(\\S.*)$`))
+  // A command with nothing to say for itself is printed as a bare indented word
+  // — "  version" sits between "  update  update the sf CLI" and "  whatsnew
+  // Display Salesforce CLI release notes..." in sf's root COMMANDS. Accepted
+  // only here, inside a block already identified as a command list: a lone
+  // indented word anywhere else in help text is prose more often than not.
+  const matchEntry = (line: string): { name: string; rest: string } | null => {
+    const m = matchChild(line)
+    if (m) return m
+    const bare = line.match(/^(?:\t|\s{2,})([A-Za-z0-9][\w-]*)\*?:?\s*$/)
+    return bare ? { name: bare[1], rest: '' } : null
+  }
+
+  // Whether an entry carries the path prefix is decided per line, not for the
+  // block as a whole: both shapes really do appear together. glab re-prints the
+  // full command path when an entry's usage overflows onto a second line,
   //     create  -t <title> <file1>   [<file2>...] [--flags]  Create a new snippet.
   //     glab snippet create  -t <title> -f <filename>  # reads from stdin
-  const prefixRe = prefix === '' ? null : new RegExp(`^\\s{2,}${escapeRe(prefix)}\\s`)
-  const entryLines = prefixRe ? block.filter((l) => matchChild(l) !== null) : []
-  const prefixedLines = prefixRe ? entryLines.filter((l) => prefixRe.test(l)) : []
-  const prefixed = prefixedLines.length * 2 > entryLines.length
-  if (prefixed) {
-    const re = new RegExp(`^\\s{2,}${escapeRe(prefix)}\\s+(\\S.*)$`)
-    for (const line of block) {
-      const m = line.match(re)
-      if (!m) continue
-      const c = parseChildRest(m[1])
-      if (c) out.push(c)
+  // and `sf` used to hand us node diagnostics appended after the help body,
+  // whose indented lines land in the last section and read as bare entries.
+  // Letting a majority of the block decide the layout for all of it threw away
+  // real commands either way.
+  const seen = new Set<string>()
+  for (const line of foldEntryLines(block, (l) => matchEntry(l) !== null)) {
+    const pm = prefixRes.map((re) => line.match(re)).find((m) => m !== null)
+    if (pm) {
+      // The overflow line names a command the block has already listed, and its
+      // remainder is a bare flag synopsis — parsing it yields a name like
+      // "create -t" that deduping downstream would not recognise as a repeat.
+      // Multi-word entries ("environment add --name <name>") survive this test:
+      // it compares against names as parsed, so a sibling "environment remove"
+      // has never put a bare "environment" in the set.
+      const first = /^\S+/.exec(pm[1])![0]
+      if (seen.has(first)) continue
+      const c = parseChildRest(pm[1])
+      if (c) {
+        out.push(c)
+        seen.add(c.name)
+      }
+      continue
     }
-  } else {
-    for (const line of block) {
-      // In a bare-name block a line that repeats the full command path is the
-      // overflow described above, never an entry of its own.
-      if (prefixRe && prefixRe.test(line)) continue
-      const m = matchChild(line)
-      if (m) out.push({ name: m.name, short: stripArgSynopsis(m.rest) })
+    const m = matchEntry(line)
+    if (m) {
+      out.push({ name: m.name, short: stripArgSynopsis(m.rest) })
+      seen.add(m.name)
     }
   }
 
@@ -696,10 +825,25 @@ export function parseHelp(text: string, prefixPath?: string[]): ParsedHelp {
   // spread subcommands across multiple "<X> Commands" sections. Walk every
   // command-shaped section in document order and concatenate the results so
   // ordering matches what the user sees in their terminal.
+  // A command can be listed twice: oclif prints one that has subcommands of its
+  // own under both "TOPICS" and "COMMANDS" (`sf agent preview`, `sf org list`).
+  // Duplicate names would become duplicate sibling nodes, and node lookup by
+  // name can only ever reach the first — keep one entry per name, taking the
+  // first description that isn't empty.
   const children: { name: string; short: string }[] = []
+  const byName = new Map<string, { name: string; short: string }>()
+  const addChild = (c: { name: string; short: string }): void => {
+    const seen = byName.get(c.name)
+    if (seen) {
+      if (seen.short === '') seen.short = c.short
+      return
+    }
+    byName.set(c.name, c)
+    children.push(c)
+  }
   for (const [header, block] of sections) {
     if (isCommandsSection(header)) {
-      children.push(...parseChildren(block, prefixPath))
+      for (const c of parseChildren(block, prefixPath)) addChild(c)
     }
   }
 
@@ -747,7 +891,7 @@ export function parseHelp(text: string, prefixPath?: string[]): ParsedHelp {
     for (let i = 0; i < lines.length; i++) {
       if (consumed.has(i)) continue
       const m = matchChild(lines[i])
-      if (m) children.push({ name: m.name, short: m.rest.trim() })
+      if (m) addChild({ name: m.name, short: m.rest.trim() })
     }
   }
 
@@ -774,7 +918,7 @@ export function parseHelp(text: string, prefixPath?: string[]): ParsedHelp {
       for (const m of matches) {
         if (m.indent <= minIndent + 4) {
           const c = matchChild(m.line)
-          if (c) children.push({ name: c.name, short: c.rest.trim() })
+          if (c) addChild({ name: c.name, short: c.rest.trim() })
         }
       }
     }
@@ -802,7 +946,7 @@ export function parseHelp(text: string, prefixPath?: string[]): ParsedHelp {
       // Drop a leading value placeholder ("<hours>") from the description so it
       // doesn't leak into the short text (matchChild keeps it as `rest`).
       const short = m.rest.replace(/^(?:<[^>]+>|\[[^\]]+\])\s{2,}/, '').trim()
-      children.push({ name: m.name, short })
+      addChild({ name: m.name, short })
     }
   }
 
@@ -833,24 +977,32 @@ export function parseHelp(text: string, prefixPath?: string[]): ParsedHelp {
 
 const HELP_TIMEOUT_MS = 15000
 
-// Build the argv for a --help invocation. On Windows, .cmd/.bat shims (npm,
-// pnpm, ...) cannot be spawned directly with shell:false — Node requires them
-// to run through cmd.exe. Route them via an explicit ['cmd.exe','/c',...]
-// argv so the repo's no-shell:true convention holds. .exe and posix binaries
-// spawn directly. Pure function so it can be unit-tested without spawning.
+// Build the {file,args} for running a CLI with `args`. On Windows, .cmd/.bat
+// shims (npm, pnpm, ...) cannot be spawned directly with shell:false — Node
+// requires them to run through cmd.exe. Route them via an explicit
+// ['cmd.exe','/c',...] argv so the repo's no-shell:true convention holds. .exe
+// and posix binaries spawn directly. Pure function so it can be unit-tested
+// without spawning.
+export function buildSpawnArgs(
+  binaryPath: string,
+  args: string[]
+): { file: string; args: string[] } {
+  if (process.platform === 'win32') {
+    const lower = binaryPath.toLowerCase()
+    if (lower.endsWith('.cmd') || lower.endsWith('.bat')) {
+      return { file: process.env.ComSpec || 'cmd.exe', args: ['/c', binaryPath, ...args] }
+    }
+  }
+  return { file: binaryPath, args }
+}
+
+// Build the argv for a --help invocation.
 export function buildHelpArgs(
   binaryPath: string,
   cmdPath: string[],
   helpFlag = '--help'
 ): { file: string; args: string[] } {
-  const helpArgs = [...cmdPath, helpFlag]
-  if (process.platform === 'win32') {
-    const lower = binaryPath.toLowerCase()
-    if (lower.endsWith('.cmd') || lower.endsWith('.bat')) {
-      return { file: process.env.ComSpec || 'cmd.exe', args: ['/c', binaryPath, ...helpArgs] }
-    }
-  }
-  return { file: binaryPath, args: helpArgs }
+  return buildSpawnArgs(binaryPath, [...cmdPath, helpFlag])
 }
 
 // nroff man pages (git subcommands via `--help`, gcloud, …) start with a
@@ -886,9 +1038,30 @@ export function buildShellHelpArgs(
   return { file: shell, args: ['-lic', shJoin([name, ...argv])] }
 }
 
-// Low-level spawn: run file+args, accumulate stdout+stderr, resolve on exit if
-// anything was produced (many CLIs print help to stderr and exit non-zero),
+// Does this stream carry the help text itself, as opposed to warnings printed
+// alongside it? A help body always announces at least one section — "Usage:",
+// "USAGE", "Available Commands:", "FLAGS". Shared with the oclif adapter, which
+// captures the same two streams for its root-help probe.
+export function looksLikeHelpBody(text: string): boolean {
+  if (text.trim() === '') return false
+  return text.split('\n').some((l) => HEADER_RE.test(l) || /^\s*usage\b/i.test(l))
+}
+
+// Low-level spawn: run file+args, resolve on exit if anything was produced,
 // reject on spawn error / silent non-zero / timeout.
+// stdout and stderr are kept apart. Plenty of CLIs print their help to stderr
+// and exit non-zero, so stderr can't just be dropped — but a CLI that does
+// print help to stdout may write something else entirely to stderr, and
+// concatenating the two feeds that into the parser. `sf` appends node
+// diagnostics after every help body,
+//     (node:96586) Error Plugin: @salesforce/cli: could not find package.json with {
+//       name: '@oclif/plugin-command-snapshot',
+//       root: '/usr/local/lib/sf',
+//       type: 'dev'
+//     }
+// whose indented lines land inside the last section of the help and read as
+// three more subcommands — for every group in the tree, each one then costing a
+// --help spawn of its own. So prefer stdout whenever it holds the help body.
 function runSpawn(
   file: string,
   args: string[],
@@ -897,7 +1070,8 @@ function runSpawn(
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(file, args, { shell: false, env })
-    let out = ''
+    let stdout = ''
+    let stderr = ''
     let settled = false
     const done = (fn: () => void) => {
       if (settled) return
@@ -916,16 +1090,17 @@ function runSpawn(
       reject(new Error(`${label} timed out after ${HELP_TIMEOUT_MS / 1000}s`))
     }, HELP_TIMEOUT_MS)
     child.stdout.on('data', (d: Buffer) => {
-      out += d.toString('utf8')
+      stdout += d.toString('utf8')
     })
     child.stderr.on('data', (d: Buffer) => {
-      out += d.toString('utf8')
+      stderr += d.toString('utf8')
     })
     child.on('error', (err) => {
       console.error(`[discover] ${label} spawn error:`, err.message)
       done(() => reject(err))
     })
     child.on('exit', (code, signal) => {
+      const out = looksLikeHelpBody(stdout) ? stdout : stdout + stderr
       if (code === 0 || out.length > 0) {
         done(() => resolve(out))
       } else {

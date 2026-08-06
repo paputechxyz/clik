@@ -1,0 +1,102 @@
+Create an Agentforce Data Library.
+
+USAGE
+  $ sf agent adl create -o <value> -n <value> --developer-name <value>
+    --source-type sfdrive|knowledge|retriever [--json] [--flags-dir <value>]
+    [--api-version <value>] [--description <value>] [--index-mode
+    basic|enhanced] [--retriever-id <value>] [--primary-index-field1 <value>]
+    [--primary-index-field2 <value>] [--content-fields <value>]
+    [--data-category-ids <value>] [--data-category-names <value>] [-w <value>]
+
+FLAGS
+  -n, --name=<value>
+      (required) Display name for the data library (max 80 characters).
+
+  -o, --target-org=<value>
+      (required) Username or alias of the target org. Not required if the
+      `target-org` configuration variable is already set.
+
+  -w, --wait=<value>
+      Wait N minutes for indexing to complete (KNOWLEDGE libraries). SFDRIVE
+      libraries require upload before indexing; RETRIEVER libraries are ready
+      immediately.
+
+  --api-version=<value>
+      Override the api version used for api requests made by this command
+
+  --content-fields=<value>
+      Comma-separated list of content fields for KNOWLEDGE libraries (optional,
+      mutable after creation).
+
+  --data-category-ids=<value>
+      Comma-separated list of data category selection IDs for KNOWLEDGE libraries.
+      Mutually exclusive with --data-category-names (provide one or the other, not
+      both).
+
+  --data-category-names=<value>
+      Comma-separated list of data category names in qualified format (e.g.,
+      "Group_API_Name.Category"). Mutually exclusive with --data-category-ids
+      (provide one or the other, not both).
+
+  --description=<value>
+      Description of the data library (max 255 characters).
+
+  --developer-name=<value>
+      (required) API name for the data library (max 80 characters, alphanumeric
+      and underscores only, must start with a letter).
+
+  --index-mode=<option>
+      Index mode for SFDRIVE libraries: basic or enhanced.
+      <options: basic|enhanced>
+
+  --primary-index-field1=<value>
+      Primary index field 1 for KNOWLEDGE libraries (required, immutable after
+      creation).
+
+  --primary-index-field2=<value>
+      Primary index field 2 for KNOWLEDGE libraries (required, immutable after
+      creation).
+
+  --retriever-id=<value>
+      ID of an active Custom Retriever (required for RETRIEVER source type;
+      retriever must be active).
+
+  --source-type=<option>
+      (required) Type of grounding source: sfdrive (file upload), knowledge
+      (Salesforce Knowledge articles), or retriever (existing active Custom
+      Retriever).
+      <options: sfdrive|knowledge|retriever>
+
+GLOBAL FLAGS
+  --flags-dir=<value>  Import flag values from a directory.
+  --json               Format output as json.
+
+DESCRIPTION
+  Create an Agentforce Data Library.
+
+  Creates a new data library in the target org. The --source-type flag
+  determines the type of library: SFDRIVE (file upload), KNOWLEDGE (Salesforce
+  Knowledge articles), or RETRIEVER (existing active Custom Retriever).
+
+  For SFDRIVE libraries, creation provisions the full Data Cloud pipeline (DLO →
+  DMO → SearchIndex → Retriever). Upload files with `sf agent adl upload` after
+  creation.
+
+EXAMPLES
+  Create an SFDRIVE library:
+
+    $ sf agent adl create --target-org myOrg --name "My Docs" \
+      --developer-name My_Docs --source-type sfdrive
+
+  Create a KNOWLEDGE library with index fields:
+
+    $ sf agent adl create --target-org myOrg --name "KB Library" \
+      --developer-name KB_Library --source-type knowledge \
+      --primary-index-field1 Title --primary-index-field2 Summary
+
+  Create a RETRIEVER library:
+
+    $ sf agent adl create --target-org myOrg --name "Existing Retriever" \
+      --developer-name Existing_Retriever --source-type retriever \
+      --retriever-id 0ppXX0000000001
+

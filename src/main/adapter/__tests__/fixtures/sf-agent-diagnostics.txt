@@ -1,0 +1,46 @@
+Commands to work with agents.
+
+USAGE
+  $ sf agent COMMAND
+
+TOPICS
+  agent adl       Commands to manage Agentforce Data Libraries.
+  agent generate  Commands to generate agent artifacts, such as the agent spec
+                  YAML file, authoring bundle, and test spec file.
+  agent mcp       Commands to manage MCP server registrations in the API
+                  Catalog.
+  agent preview   Interact with an agent to preview how it responds to your
+                  statements, questions, and commands (utterances).
+  agent publish   Command to publish agents to an org.
+  agent test      Commands to test agents.
+  agent trace     Delete trace files from an agent preview session.
+  agent validate  Command to validate an Agent Script file.
+
+COMMANDS
+  agent activate    Activate an agent in an org.
+  agent create      Create an agent in your org using a local agent spec file.
+  agent deactivate  Deactivate an agent in an org.
+  agent preview     Interact with an agent to preview how it responds to your
+                    statements, questions, and commands (utterances).
+
+(node:96586) Error Plugin: @salesforce/cli: could not find package.json with {
+  name: '@oclif/plugin-command-snapshot',
+  root: '/usr/local/lib/sf',
+  type: 'dev'
+}
+module: @oclif/core@4.13.2
+plugin: @salesforce/cli
+root: /usr/local/lib/sf
+See more details with DEBUG=*
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:96586) Error Plugin: @salesforce/cli: could not find package.json with {
+  name: '@salesforce/plugin-release-management',
+  root: '/usr/local/lib/sf',
+  type: 'dev'
+}
+module: @oclif/core@4.13.2
+plugin: @salesforce/cli
+root: /usr/local/lib/sf
+See more details with DEBUG=*
+ ›   Warning: Could not find typescript. Please ensure that typescript is a 
+ ›   devDependency. Falling back to compiled source.

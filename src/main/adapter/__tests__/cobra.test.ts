@@ -2,7 +2,13 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
-import { parseHelp, buildHelpArgs, buildShellHelpArgs, looksLikeManPage } from '../cobra'
+import {
+  parseHelp,
+  buildHelpArgs,
+  buildShellHelpArgs,
+  looksLikeHelpBody,
+  looksLikeManPage
+} from '../cobra'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const fx = (name: string): string => readFileSync(path.join(here, 'fixtures', name), 'utf8')
@@ -1090,5 +1096,184 @@ describe('parseHelp - glab snippet create (usage line with no command placeholde
       default: 'private',
       usage: "Limit by visibility: 'public', 'internal', or 'private'."
     })
+  })
+})
+
+describe('parseHelp - sf root (oclif TOPICS + COMMANDS)', () => {
+  // oclif splits the child list in two sections: "TOPICS" holds the groups and
+  // "COMMANDS" the runnable leaves. Reading only the latter dropped every
+  // Salesforce CLI topic — 30 of the 31 top-level entries.
+  const p = parseHelp(fx('sf-root.txt'), ['sf'])
+
+  it('lists topics and commands together, in document order', () => {
+    const names = p.children.map((c) => c.name)
+    expect(names.slice(0, 4)).toEqual(['agent', 'alias', 'apex', 'api'])
+    expect(names).toContain('project')
+    expect(names).toContain('org')
+    // From the COMMANDS section, printed after the topics.
+    expect(names).toContain('doctor')
+    expect(names).toContain('which')
+    expect(names.indexOf('doctor')).toBeGreaterThan(names.indexOf('project'))
+  })
+
+  it('reads a wrapped description without inventing a child from its overflow', () => {
+    const apex = p.children.find((c) => c.name === 'apex')!
+    expect(apex.short).toContain('Use the apex commands to create Apex classes')
+    expect(p.children.map((c) => c.name)).not.toContain('blocks')
+    expect(p.children.map((c) => c.name)).not.toContain('provided')
+  })
+
+  it('keeps a command that has no description of its own', () => {
+    // "  version" is printed bare, with no summary column at all; requiring a
+    // description dropped it from the tree.
+    const version = p.children.filter((c) => c.name === 'version')
+    expect(version).toEqual([{ name: 'version', short: '' }])
+  })
+
+  it('extracts the usage line', () => {
+    expect(p.usage).toBe('$ sf [COMMAND]')
+  })
+})
+
+describe('parseHelp - sf agent (entries prefixed with the command path)', () => {
+  // Below the root, oclif repeats the parent command path on every entry —
+  // "  agent adl  Commands to manage Agentforce Data Libraries." — without the
+  // binary name that the yargs layout carries. Left unstripped, each child was
+  // named "agent adl" and discovery went looking for `sf agent agent adl`.
+  const p = parseHelp(fx('sf-agent.txt'), ['sf', 'agent'])
+
+  it('strips the parent path from each child name', () => {
+    const names = p.children.map((c) => c.name)
+    expect(names).toContain('adl')
+    expect(names).toContain('generate')
+    expect(names).toContain('activate')
+    expect(names.some((n) => n.startsWith('agent'))).toBe(false)
+  })
+
+  it('keeps the description', () => {
+    const adl = p.children.find((c) => c.name === 'adl')!
+    expect(adl.short).toBe('Commands to manage Agentforce Data Libraries.')
+    const generate = p.children.find((c) => c.name === 'generate')!
+    expect(generate.short).toContain('Commands to generate agent artifacts')
+    expect(generate.short).toContain('test spec file.')
+  })
+
+  it('lists a command that is also a topic exactly once', () => {
+    // `agent preview` is printed under TOPICS (it has subcommands) and again
+    // under COMMANDS (it runs on its own). Two sibling nodes with one name
+    // would shadow each other in the tree.
+    const previews = p.children.filter((c) => c.name === 'preview')
+    expect(previews).toHaveLength(1)
+    expect(previews[0].short).toContain('Interact with an agent')
+  })
+})
+
+describe('parseHelp - sf agent with node diagnostics appended', () => {
+  // What `sf agent --help` really produces once stderr is folded in: node prints
+  //     (node:96586) Error Plugin: @salesforce/cli: could not find package.json with {
+  //       name: '@oclif/plugin-command-snapshot',
+  //       root: '/usr/local/lib/sf',
+  //       type: 'dev'
+  //     }
+  // after the help body, and those indented lines fall inside the last section.
+  // Deciding the entry layout per block by majority let six such lines outvote
+  // the four real commands, so nothing under COMMANDS got its path stripped.
+  // runSpawn now keeps stderr out when stdout holds the help, and the layout is
+  // decided per line, so neither half of that can come back.
+  const p = parseHelp(fx('sf-agent-diagnostics.txt'), ['sf', 'agent'])
+
+  it('reads every real command out of the diluted block', () => {
+    const names = p.children.map((c) => c.name)
+    expect(names).toContain('activate')
+    expect(names).toContain('create')
+    expect(names).toContain('deactivate')
+    expect(names).toContain('preview')
+    expect(names.some((n) => n.startsWith('agent'))).toBe(false)
+  })
+
+  it('recognises the help body on stdout, so the diagnostics are droppable', () => {
+    const [body, diagnostics] = fx('sf-agent-diagnostics.txt').split('(node:96586)')
+    expect(looksLikeHelpBody(body)).toBe(true)
+    expect(looksLikeHelpBody(diagnostics)).toBe(false)
+  })
+})
+
+describe('parseHelp - sf data query (oclif flag layout)', () => {
+  const p = parseHelp(fx('sf-data-query.txt'), ['sf', 'data', 'query'])
+  const flag = (n: string) => p.flags.find((f) => f.name === n)!
+
+  it('parses the flag table oclif writes as "--name=<value>"', () => {
+    expect(p.children).toEqual([])
+    expect(p.flags.map((f) => f.name)).toEqual([
+      'file',
+      'target-org',
+      'query',
+      'result-format',
+      'use-tooling-api',
+      'all-rows',
+      'api-version',
+      'output-file'
+    ])
+    expect(flag('query')).toMatchObject({
+      shorthand: 'q',
+      type: 'string',
+      usage: 'SOQL query to execute.'
+    })
+  })
+
+  it('treats a flag with no value placeholder as a switch', () => {
+    expect(flag('use-tooling-api')).toMatchObject({ shorthand: 't', type: 'bool' })
+    expect(flag('all-rows').type).toBe('bool')
+  })
+
+  it('reads the default out of the description and un-wraps the options list', () => {
+    expect(flag('result-format')).toMatchObject({ type: 'string', default: 'human' })
+    expect(flag('result-format').usage).toBe(
+      'Format to display the results; the --json flag overrides this flag. <options: human|csv|json>'
+    )
+  })
+
+  it('keeps a wrapped description on one line, "(required)" included', () => {
+    expect(flag('target-org').usage).toBe(
+      '(required) Username or alias of the target org. Not required if the `target-org` configuration variable is already set.'
+    )
+  })
+
+  it('reads the GLOBAL FLAGS section as inherited flags', () => {
+    expect(p.globalFlags.map((f) => f.name)).toEqual(['flags-dir', 'json'])
+    expect(p.globalFlags.find((f) => f.name === 'json')!.type).toBe('bool')
+  })
+})
+
+describe('parseHelp - sf agent adl create (flag descriptions on the next line)', () => {
+  // When a description is too long to align in a second column, oclif drops it
+  // below the flag and separates entries with a blank line.
+  const p = parseHelp(fx('sf-agent-adl-create.txt'), ['sf', 'agent', 'adl', 'create'])
+  const flag = (n: string) => p.flags.find((f) => f.name === n)!
+
+  it('folds the description back onto its flag', () => {
+    expect(p.flags).toHaveLength(14)
+    expect(flag('name')).toMatchObject({
+      shorthand: 'n',
+      type: 'string',
+      usage: '(required) Display name for the data library (max 80 characters).'
+    })
+    expect(flag('description').usage).toBe('Description of the data library (max 255 characters).')
+  })
+
+  it('keeps the options list of an enum flag', () => {
+    expect(flag('index-mode').usage).toBe(
+      'Index mode for SFDRIVE libraries: basic or enhanced. <options: basic|enhanced>'
+    )
+    expect(flag('source-type').usage).toContain('<options: sfdrive|knowledge|retriever>')
+  })
+
+  it('does not fold a description that mentions another flag into an entry', () => {
+    expect(p.flags.map((f) => f.name)).not.toContain('data-category-names (provide')
+    expect(flag('data-category-ids').usage).toContain('Mutually exclusive with --data-category-names')
+  })
+
+  it('stays a leaf (EXAMPLES and DESCRIPTION are not command lists)', () => {
+    expect(p.children).toEqual([])
   })
 })

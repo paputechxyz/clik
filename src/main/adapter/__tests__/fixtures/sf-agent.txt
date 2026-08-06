@@ -1,0 +1,25 @@
+Commands to work with agents.
+
+USAGE
+  $ sf agent COMMAND
+
+TOPICS
+  agent adl       Commands to manage Agentforce Data Libraries.
+  agent generate  Commands to generate agent artifacts, such as the agent spec
+                  YAML file, authoring bundle, and test spec file.
+  agent mcp       Commands to manage MCP server registrations in the API
+                  Catalog.
+  agent preview   Interact with an agent to preview how it responds to your
+                  statements, questions, and commands (utterances).
+  agent publish   Command to publish agents to an org.
+  agent test      Commands to test agents.
+  agent trace     Delete trace files from an agent preview session.
+  agent validate  Command to validate an Agent Script file.
+
+COMMANDS
+  agent activate    Activate an agent in an org.
+  agent create      Create an agent in your org using a local agent spec file.
+  agent deactivate  Deactivate an agent in an org.
+  agent preview     Interact with an agent to preview how it responds to your
+                    statements, questions, and commands (utterances).
+

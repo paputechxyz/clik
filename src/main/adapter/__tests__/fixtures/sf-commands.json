@@ -1,0 +1,829 @@
+[
+  {
+    "id": "agent:activate",
+    "summary": "Activate an agent in an org.",
+    "description": "Activating an agent makes it immediately available to your users. A published agent must be active before you can preview it with the \"agent preview\" CLI command or VS Code. Agents can have multiple v \u2026",
+    "flags": {
+      "json": {
+        "description": "Format output as json.",
+        "helpGroup": "GLOBAL",
+        "name": "json",
+        "allowNo": false,
+        "type": "boolean"
+      },
+      "flags-dir": {
+        "helpGroup": "GLOBAL",
+        "name": "flags-dir",
+        "summary": "Import flag values from a directory.",
+        "multiple": false,
+        "type": "option"
+      },
+      "target-org": {
+        "char": "o",
+        "name": "target-org",
+        "required": true,
+        "summary": "Username or alias of the target org. Not required if the `target-org` configuration variable is already set.",
+        "multiple": false,
+        "type": "option"
+      },
+      "api-version": {
+        "description": "Override the api version used for api requests made by this command",
+        "name": "api-version",
+        "multiple": false,
+        "type": "option"
+      },
+      "api-name": {
+        "char": "n",
+        "name": "api-name",
+        "summary": "API name of the agent to activate; if not specified, the command provides a list that you choose from.",
+        "multiple": false,
+        "type": "option"
+      },
+      "version": {
+        "name": "version",
+        "summary": "Version number of the agent to activate; if not specified, the command provides a list that you choose from.",
+        "multiple": false,
+        "type": "option"
+      }
+    }
+  },
+  {
+    "id": "agent:adl:create",
+    "summary": "Create an Agentforce Data Library.",
+    "description": "Creates a new data library in the target org. The --source-type flag determines the type of library: SFDRIVE (file upload), KNOWLEDGE (Salesforce Knowledge articles), or RETRIEVER (existing active Custom Retriever).\n\nFor SFDRIVE libraries, creation provisions the full Data Cloud pipeline (DLO \u2192 DMO \u2192 SearchIndex \u2192 Retriever). Upload files with `sf agent adl upload` after creation.",
+    "flags": {
+      "json": {
+        "description": "Format output as json.",
+        "helpGroup": "GLOBAL",
+        "name": "json",
+        "allowNo": false,
+        "type": "boolean"
+      },
+      "flags-dir": {
+        "helpGroup": "GLOBAL",
+        "name": "flags-dir",
+        "summary": "Import flag values from a directory.",
+        "multiple": false,
+        "type": "option"
+      },
+      "target-org": {
+        "char": "o",
+        "name": "target-org",
+        "required": true,
+        "summary": "Username or alias of the target org. Not required if the `target-org` configuration variable is already set.",
+        "multiple": false,
+        "type": "option"
+      },
+      "api-version": {
+        "description": "Override the api version used for api requests made by this command",
+        "name": "api-version",
+        "multiple": false,
+        "type": "option"
+      },
+      "name": {
+        "char": "n",
+        "name": "name",
+        "required": true,
+        "summary": "Display name for the data library (max 80 characters).",
+        "multiple": false,
+        "type": "option"
+      },
+      "developer-name": {
+        "name": "developer-name",
+        "required": true,
+        "summary": "API name for the data library (max 80 characters, alphanumeric and underscores only, must start with a letter).",
+        "multiple": false,
+        "type": "option"
+      },
+      "source-type": {
+        "name": "source-type",
+        "required": true,
+        "summary": "Type of grounding source: sfdrive (file upload), knowledge (Salesforce Knowledge articles), or retriever (existing active Custom Retriever).",
+        "multiple": false,
+        "options": [
+          "sfdrive",
+          "knowledge",
+          "retriever"
+        ],
+        "type": "option"
+      },
+      "description": {
+        "name": "description",
+        "summary": "Description of the data library (max 255 characters).",
+        "multiple": false,
+        "type": "option"
+      },
+      "index-mode": {
+        "name": "index-mode",
+        "summary": "Index mode for SFDRIVE libraries: basic or enhanced.",
+        "multiple": false,
+        "options": [
+          "basic",
+          "enhanced"
+        ],
+        "type": "option"
+      },
+      "retriever-id": {
+        "name": "retriever-id",
+        "summary": "ID of an active Custom Retriever (required for RETRIEVER source type; retriever must be active).",
+        "multiple": false,
+        "type": "option"
+      },
+      "primary-index-field1": {
+        "name": "primary-index-field1",
+        "summary": "Primary index field 1 for KNOWLEDGE libraries (required, immutable after creation).",
+        "multiple": false,
+        "type": "option"
+      },
+      "primary-index-field2": {
+        "name": "primary-index-field2",
+        "summary": "Primary index field 2 for KNOWLEDGE libraries (required, immutable after creation).",
+        "multiple": false,
+        "type": "option"
+      },
+      "content-fields": {
+        "name": "content-fields",
+        "summary": "Comma-separated list of content fields for KNOWLEDGE libraries (optional, mutable after creation).",
+        "multiple": false,
+        "type": "option"
+      },
+      "data-category-ids": {
+        "name": "data-category-ids",
+        "summary": "Comma-separated list of data category selection IDs for KNOWLEDGE libraries. Mutually exclusive with --data-category-names (provide one or the other, not both).",
+        "multiple": false,
+        "type": "option"
+      },
+      "data-category-names": {
+        "name": "data-category-names",
+        "summary": "Comma-separated list of data category names in qualified format (e.g., \"Group_API_Name.Category\"). Mutually exclusive with --data-category-ids (provide one or the other, not both).",
+        "multiple": false,
+        "type": "option"
+      },
+      "wait": {
+        "char": "w",
+        "name": "wait",
+        "summary": "Wait N minutes for indexing to complete (KNOWLEDGE libraries). SFDRIVE libraries require upload before indexing; RETRIEVER libraries are ready immediately.",
+        "multiple": false,
+        "type": "option"
+      }
+    }
+  },
+  {
+    "id": "agent:adl:file:add",
+    "summary": "Add files to an existing Agentforce Data Library.",
+    "description": "Adds one or more files to an existing SFDRIVE data library and triggers SearchIndex re-hydration. This is the day-2 operation for adding files to an already-provisioned library.\n\nAdds files to an exis \u2026",
+    "flags": {
+      "json": {
+        "description": "Format output as json.",
+        "helpGroup": "GLOBAL",
+        "name": "json",
+        "allowNo": false,
+        "type": "boolean"
+      },
+      "flags-dir": {
+        "helpGroup": "GLOBAL",
+        "name": "flags-dir",
+        "summary": "Import flag values from a directory.",
+        "multiple": false,
+        "type": "option"
+      },
+      "target-org": {
+        "char": "o",
+        "name": "target-org",
+        "required": true,
+        "summary": "Username or alias of the target org. Not required if the `target-org` configuration variable is already set.",
+        "multiple": false,
+        "type": "option"
+      },
+      "api-version": {
+        "description": "Override the api version used for api requests made by this command",
+        "name": "api-version",
+        "multiple": false,
+        "type": "option"
+      },
+      "library-id": {
+        "char": "i",
+        "name": "library-id",
+        "required": true,
+        "summary": "Agentforce Data Library ID (18-char Salesforce ID with prefix 1JD).",
+        "multiple": false,
+        "type": "option"
+      },
+      "path": {
+        "char": "f",
+        "name": "path",
+        "required": true,
+        "summary": "Path to file(s) to add. Specify multiple times for batch upload.",
+        "multiple": true,
+        "type": "option"
+      }
+    }
+  },
+  {
+    "id": "agent:preview",
+    "summary": "Interact with an agent to preview how it responds to your statements, questions, and commands (utterances).",
+    "description": "Use this command to have a natural language conversation with an agent, either while you code its local Agent Script file or when it's published to an org. Previewing an agent acts like an initial tes \u2026",
+    "flags": {
+      "flags-dir": {
+        "helpGroup": "GLOBAL",
+        "name": "flags-dir",
+        "summary": "Import flag values from a directory.",
+        "multiple": false,
+        "type": "option"
+      },
+      "target-org": {
+        "char": "o",
+        "name": "target-org",
+        "required": true,
+        "summary": "Username or alias of the target org. Not required if the `target-org` configuration variable is already set.",
+        "multiple": false,
+        "type": "option"
+      },
+      "api-version": {
+        "description": "Override the api version used for api requests made by this command",
+        "name": "api-version",
+        "multiple": false,
+        "type": "option"
+      },
+      "api-name": {
+        "char": "n",
+        "name": "api-name",
+        "summary": "API name of the activated published agent you want to interact with.",
+        "multiple": false,
+        "type": "option"
+      },
+      "authoring-bundle": {
+        "name": "authoring-bundle",
+        "summary": "API name of the authoring bundle metadata component that contains the agent's Agent Script file.",
+        "multiple": false,
+        "type": "option"
+      },
+      "output-dir": {
+        "char": "d",
+        "name": "output-dir",
+        "summary": "Directory where conversation transcripts are saved.",
+        "multiple": false,
+        "type": "option"
+      },
+      "apex-debug": {
+        "char": "x",
+        "name": "apex-debug",
+        "summary": "Enable Apex debug logging during the agent preview conversation.",
+        "allowNo": false,
+        "type": "boolean"
+      },
+      "use-live-actions": {
+        "name": "use-live-actions",
+        "summary": "Use real actions in the org; if not specified, preview uses AI to simulate (mock) actions.",
+        "allowNo": false,
+        "type": "boolean"
+      },
+      "context-variables": {
+        "description": "Sets variables on the agent preview session, mirroring what the in-org Agentforce Builder UI does when you override variables before sending a message \u2026",
+        "name": "context-variables",
+        "summary": "Session variables for the agent preview session, in the form Name=Value.",
+        "multiple": true,
+        "type": "option"
+      },
+      "agent-json": {
+        "hidden": true,
+        "name": "agent-json",
+        "summary": "Path to a pre-compiled AgentJSON file to use instead of compiling the Agent Script file. Intended for internal use and testing.",
+        "multiple": false,
+        "type": "option"
+      }
+    }
+  },
+  {
+    "id": "agent:preview:start",
+    "summary": "Start a programmatic agent preview session.",
+    "description": "This command outputs a session ID that you then use with the \"agent preview send\" command to send an utterance to the agent. Use the \"agent preview sessions\" command to list all active sessions and th \u2026",
+    "flags": {
+      "json": {
+        "description": "Format output as json.",
+        "helpGroup": "GLOBAL",
+        "name": "json",
+        "allowNo": false,
+        "type": "boolean"
+      },
+      "flags-dir": {
+        "helpGroup": "GLOBAL",
+        "name": "flags-dir",
+        "summary": "Import flag values from a directory.",
+        "multiple": false,
+        "type": "option"
+      },
+      "target-org": {
+        "char": "o",
+        "name": "target-org",
+        "required": true,
+        "summary": "Username or alias of the target org. Not required if the `target-org` configuration variable is already set.",
+        "multiple": false,
+        "type": "option"
+      },
+      "api-version": {
+        "description": "Override the api version used for api requests made by this command",
+        "name": "api-version",
+        "multiple": false,
+        "type": "option"
+      },
+      "api-name": {
+        "char": "n",
+        "name": "api-name",
+        "summary": "API name of the activated published agent you want to preview.",
+        "multiple": false,
+        "type": "option"
+      },
+      "authoring-bundle": {
+        "name": "authoring-bundle",
+        "summary": "API name of the authoring bundle metadata component that contains the agent's Agent Script file.",
+        "multiple": false,
+        "type": "option"
+      },
+      "use-live-actions": {
+        "name": "use-live-actions",
+        "summary": "Execute real actions in the org (Apex classes, flows, etc.). Required with --authoring-bundle.",
+        "allowNo": false,
+        "type": "boolean"
+      },
+      "simulate-actions": {
+        "name": "simulate-actions",
+        "summary": "Use AI to simulate action execution instead of calling real actions. Required with --authoring-bundle.",
+        "allowNo": false,
+        "type": "boolean"
+      },
+      "context-variables": {
+        "description": "Sets variables on the agent preview session, mirroring what the in-org Agentforce Builder UI does when you override variables before sending a message \u2026",
+        "name": "context-variables",
+        "summary": "Session variables for the agent preview session, in the form Name=Value.",
+        "multiple": true,
+        "type": "option"
+      },
+      "agent-json": {
+        "hidden": true,
+        "name": "agent-json",
+        "summary": "Path to a pre-compiled AgentJSON file to use instead of compiling the Agent Script file. Intended for internal use and testing.",
+        "multiple": false,
+        "type": "option"
+      }
+    }
+  },
+  {
+    "id": "org:list",
+    "summary": "List all orgs you\u2019ve created or authenticated to.",
+    "aliases": [
+      "force:org:list"
+    ],
+    "flags": {
+      "json": {
+        "description": "Format output as json.",
+        "helpGroup": "GLOBAL",
+        "name": "json",
+        "allowNo": false,
+        "type": "boolean"
+      },
+      "flags-dir": {
+        "helpGroup": "GLOBAL",
+        "name": "flags-dir",
+        "summary": "Import flag values from a directory.",
+        "multiple": false,
+        "type": "option"
+      },
+      "verbose": {
+        "name": "verbose",
+        "summary": "List more information about each org.",
+        "allowNo": false,
+        "type": "boolean"
+      },
+      "all": {
+        "name": "all",
+        "summary": "Include expired, deleted, and unknown-status scratch orgs.",
+        "allowNo": false,
+        "type": "boolean"
+      },
+      "clean": {
+        "name": "clean",
+        "summary": "Remove all local org authorizations for non-active scratch orgs. Use \"org logout\" to remove non-scratch orgs.",
+        "allowNo": false,
+        "type": "boolean"
+      },
+      "no-prompt": {
+        "char": "p",
+        "name": "no-prompt",
+        "summary": "Don't prompt for confirmation.",
+        "allowNo": false,
+        "type": "boolean"
+      },
+      "skip-connection-status": {
+        "name": "skip-connection-status",
+        "summary": "Skip retrieving the connection status of non-scratch orgs.",
+        "allowNo": false,
+        "type": "boolean"
+      },
+      "loglevel": {
+        "deprecated": {
+          "message": "The loglevel flag is no longer in use on this command. You may use it without error, but it will be ignored.\nSet the log level using the `SF_LOG_LEVEL` environment variable."
+        },
+        "hidden": true,
+        "name": "loglevel",
+        "multiple": false,
+        "type": "option"
+      }
+    }
+  },
+  {
+    "id": "org:list:auth",
+    "summary": "List authorization information about the orgs you created or logged into.",
+    "description": "This command uses local authorization information that Salesforce CLI caches when you create a scratch org or log into an org. The command doesn't actually connect to the orgs to verify that they're still active. As a result, this command executes very quickly. If you want to view live information about your authorized orgs, such as their connection status, use the \"org list\" command.",
+    "aliases": [
+      "force:auth:list",
+      "auth:list"
+    ],
+    "flags": {
+      "json": {
+        "description": "Format output as json.",
+        "helpGroup": "GLOBAL",
+        "name": "json",
+        "allowNo": false,
+        "type": "boolean"
+      },
+      "flags-dir": {
+        "helpGroup": "GLOBAL",
+        "name": "flags-dir",
+        "summary": "Import flag values from a directory.",
+        "multiple": false,
+        "type": "option"
+      },
+      "loglevel": {
+        "deprecated": {
+          "message": "The loglevel flag is no longer in use on this command. You may use it without error, but it will be ignored.\nSet the log level using the `SFDX_LOG_LEVEL` environment variable."
+        },
+        "hidden": true,
+        "name": "loglevel",
+        "multiple": false,
+        "type": "option"
+      }
+    }
+  },
+  {
+    "id": "data:query",
+    "summary": "Execute a SOQL query.",
+    "description": "Specify the SOQL query at the command line with the --query flag or read the query from a file with the --file flag.\n\nIf your query returns more than 10,000 records, prefer to use the `sf data export bulk` command instead. It runs the query using Bulk API 2.0, which has higher limits than the default API used by the command.",
+    "aliases": [
+      "force:data:soql:query"
+    ],
+    "flags": {
+      "json": {
+        "description": "Format output as json.",
+        "helpGroup": "GLOBAL",
+        "name": "json",
+        "allowNo": false,
+        "type": "boolean"
+      },
+      "flags-dir": {
+        "helpGroup": "GLOBAL",
+        "name": "flags-dir",
+        "summary": "Import flag values from a directory.",
+        "multiple": false,
+        "type": "option"
+      },
+      "target-org": {
+        "char": "o",
+        "name": "target-org",
+        "required": true,
+        "summary": "Username or alias of the target org. Not required if the `target-org` configuration variable is already set.",
+        "multiple": false,
+        "type": "option"
+      },
+      "api-version": {
+        "description": "Override the api version used for api requests made by this command",
+        "name": "api-version",
+        "multiple": false,
+        "type": "option"
+      },
+      "loglevel": {
+        "deprecated": {
+          "message": "The loglevel flag is no longer in use on this command. You may use it without error, but it will be ignored.\nSet the log level using the `SF_LOG_LEVEL` environment variable."
+        },
+        "hidden": true,
+        "name": "loglevel",
+        "multiple": false,
+        "type": "option"
+      },
+      "query": {
+        "char": "q",
+        "name": "query",
+        "summary": "SOQL query to execute.",
+        "multiple": false,
+        "type": "option"
+      },
+      "file": {
+        "char": "f",
+        "name": "file",
+        "summary": "File that contains the SOQL query.",
+        "multiple": false,
+        "type": "option"
+      },
+      "use-tooling-api": {
+        "char": "t",
+        "name": "use-tooling-api",
+        "summary": "Use Tooling API so you can run queries on Tooling API objects.",
+        "allowNo": false,
+        "type": "boolean"
+      },
+      "all-rows": {
+        "name": "all-rows",
+        "summary": "Include deleted records. By default, deleted records are not returned.",
+        "allowNo": false,
+        "type": "boolean"
+      },
+      "result-format": {
+        "char": "r",
+        "name": "result-format",
+        "summary": "Format to display the results; the --json flag overrides this flag.",
+        "default": "human",
+        "multiple": false,
+        "options": [
+          "human",
+          "csv",
+          "json"
+        ],
+        "type": "option"
+      },
+      "perflog": {
+        "deprecated": {
+          "version": "57"
+        },
+        "description": "Gets data on API performance metrics from the server. The data is stored in $HOME/.sfdx/apiPerformanceLog.json.",
+        "hidden": true,
+        "name": "perflog",
+        "summary": "Get API performance data.",
+        "allowNo": false,
+        "type": "boolean"
+      },
+      "output-file": {
+        "name": "output-file",
+        "summary": "File where records are written; only CSV and JSON output formats are supported.",
+        "multiple": false,
+        "type": "option"
+      }
+    }
+  },
+  {
+    "id": "project:deploy:start",
+    "summary": "Deploy metadata to an org from your local project.",
+    "description": "You must run this command from within a project.\n\nMetadata components are deployed in source format by default. Deploy them in metadata format by specifying the --metadata-dir flag, which specifies th \u2026",
+    "aliases": [
+      "deploy:metadata"
+    ],
+    "flags": {
+      "json": {
+        "description": "Format output as json.",
+        "helpGroup": "GLOBAL",
+        "name": "json",
+        "allowNo": false,
+        "type": "boolean"
+      },
+      "flags-dir": {
+        "helpGroup": "GLOBAL",
+        "name": "flags-dir",
+        "summary": "Import flag values from a directory.",
+        "multiple": false,
+        "type": "option"
+      },
+      "api-version": {
+        "char": "a",
+        "description": "Use this flag to override the default API version with the API version of your package.xml file. The default API version is the latest version supported by the CLI.",
+        "name": "api-version",
+        "summary": "Target API version for the deploy.",
+        "multiple": false,
+        "type": "option"
+      },
+      "async": {
+        "description": "The command immediately returns the job ID and control of the terminal to you. This way, you can continue to use the CLI. To resume the deployment, run \"<%= config.bin %> project deploy resume\". To check the status of the deployment, run \"<%= config.bin %> project deploy report\".",
+        "name": "async",
+        "summary": "Run the command asynchronously.",
+        "allowNo": false,
+        "type": "boolean"
+      },
+      "concise": {
+        "name": "concise",
+        "summary": "Show concise output of the deploy result.",
+        "allowNo": false,
+        "type": "boolean"
+      },
+      "dry-run": {
+        "name": "dry-run",
+        "summary": "Validate deploy and run Apex tests but don\u2019t save to the org.",
+        "allowNo": false,
+        "type": "boolean"
+      },
+      "ignore-conflicts": {
+        "char": "c",
+        "description": "This flag applies only to orgs that allow source tracking. It has no effect on orgs that don't allow it, such as production orgs.",
+        "name": "ignore-conflicts",
+        "summary": "Ignore conflicts and deploy local files, even if they overwrite changes in the org.",
+        "allowNo": false,
+        "type": "boolean"
+      },
+      "ignore-errors": {
+        "char": "r",
+        "description": "Never use this flag when deploying to a production org. If you specify it, components without errors are deployed and components with errors are skipped, and could result in an inconsistent production org.",
+        "name": "ignore-errors",
+        "summary": "Ignore any errors and don\u2019t roll back deployment.",
+        "allowNo": false,
+        "type": "boolean"
+      },
+      "ignore-warnings": {
+        "char": "g",
+        "description": "If you specify this flag, and a warning occurs, the success status of the deployment is set to true. If you don't specify this flag, and a warning occ \u2026",
+        "name": "ignore-warnings",
+        "summary": "Ignore warnings and allow a deployment to complete successfully.",
+        "allowNo": false,
+        "type": "boolean"
+      },
+      "manifest": {
+        "char": "x",
+        "description": "All child components are included. If you specify this flag, don\u2019t specify --metadata or --source-dir.",
+        "helpGroup": "Source Format",
+        "name": "manifest",
+        "summary": "Full file path for manifest (package.xml) of components to deploy.",
+        "multiple": false,
+        "type": "option"
+      },
+      "metadata": {
+        "char": "m",
+        "helpGroup": "Source Format",
+        "name": "metadata",
+        "summary": "Metadata component names to deploy. Wildcards (`*` ) supported as long as you use quotes, such as `ApexClass:MyClass*`.",
+        "multiple": true,
+        "type": "option"
+      },
+      "metadata-dir": {
+        "helpGroup": "Metadata API Format",
+        "name": "metadata-dir",
+        "summary": "Root of directory or zip file of metadata formatted files to deploy.",
+        "multiple": false,
+        "type": "option"
+      },
+      "single-package": {
+        "helpGroup": "Metadata API Format",
+        "name": "single-package",
+        "summary": "Indicates that the metadata zip file points to a directory structure for a single package.",
+        "allowNo": false,
+        "type": "boolean"
+      },
+      "source-dir": {
+        "char": "d",
+        "description": "The supplied path can be to a single file (in which case the operation is applied to only one file) or to a folder (in which case the operation is applied to all metadata types in the directory and its subdirectories).\n\nIf you specify this flag, don\u2019t specify --metadata or --manifest.",
+        "helpGroup": "Source Format",
+        "name": "source-dir",
+        "summary": "Path to the local source files to deploy.",
+        "multiple": true,
+        "type": "option"
+      },
+      "target-org": {
+        "char": "o",
+        "name": "target-org",
+        "required": true,
+        "summary": "Username or alias of the target org. Not required if the `target-org` configuration variable is already set.",
+        "multiple": false,
+        "type": "option"
+      },
+      "tests": {
+        "char": "t",
+        "description": "If a test name contains a space, enclose it in double quotes.\nFor multiple test names, use one of the following formats:\n\n- Repeat the flag for multiple test names: --tests Test1 --tests Test2 --tests \"Test With Space\"\n- Separate the test names with spaces: --tests Test1 Test2 \"Test With Space\"",
+        "helpGroup": "Test",
+        "name": "tests",
+        "summary": "Apex tests to run when --test-level is RunSpecifiedTests.",
+        "multiple": true,
+        "type": "option"
+      },
+      "test-level": {
+        "char": "l",
+        "description": "Valid values are:\n\n- NoTestRun \u2014 No tests are run. This test level applies only to deployments to development environments, such as sandbox, Developer \u2026",
+        "helpGroup": "Test",
+        "name": "test-level",
+        "summary": "Deployment Apex testing level.",
+        "multiple": false,
+        "options": [
+          "NoTestRun",
+          "RunSpecifiedTests",
+          "RunLocalTests",
+          "RunAllTestsInOrg",
+          "RunRelevantTests"
+        ],
+        "type": "option"
+      },
+      "verbose": {
+        "name": "verbose",
+        "summary": "Show verbose output of the deploy result.",
+        "allowNo": false,
+        "type": "boolean"
+      },
+      "wait": {
+        "char": "w",
+        "description": "If the command continues to run after the wait period, the CLI returns control of the terminal window to you and returns the job ID. To resume the deployment, run \"<%= config.bin %> project deploy resume\". To check the status of the deployment, run \"<%= config.bin %> project deploy report\".",
+        "name": "wait",
+        "summary": "Number of minutes to wait for command to complete and display results.",
+        "helpValue": "<minutes>",
+        "multiple": false,
+        "type": "option"
+      },
+      "purge-on-delete": {
+        "helpGroup": "Delete",
+        "name": "purge-on-delete",
+        "summary": "Specify that deleted components in the destructive changes manifest file are immediately eligible for deletion rather than being stored in the Recycle Bin.",
+        "allowNo": false,
+        "type": "boolean"
+      },
+      "pre-destructive-changes": {
+        "helpGroup": "Delete",
+        "name": "pre-destructive-changes",
+        "summary": "File path for a manifest (destructiveChangesPre.xml) of components to delete before the deploy.",
+        "multiple": false,
+        "type": "option"
+      },
+      "post-destructive-changes": {
+        "helpGroup": "Delete",
+        "name": "post-destructive-changes",
+        "summary": "File path for a manifest (destructiveChangesPost.xml) of components to delete after the deploy.",
+        "multiple": false,
+        "type": "option"
+      },
+      "coverage-formatters": {
+        "description": "For multiple formatters, repeat the flag for each formatter.\n--coverage-formatters lcov --coverage-formatters clover",
+        "helpGroup": "Test",
+        "name": "coverage-formatters",
+        "summary": "Format of the code coverage results.",
+        "multiple": true,
+        "options": [
+          "clover",
+          "cobertura",
+          "html-spa",
+          "html",
+          "json",
+          "json-summary",
+          "lcovonly",
+          "none",
+          "teamcity",
+          "text",
+          "text-summary"
+        ],
+        "type": "option"
+      },
+      "junit": {
+        "helpGroup": "Test",
+        "name": "junit",
+        "summary": "Output JUnit test results.",
+        "allowNo": false,
+        "type": "boolean"
+      },
+      "results-dir": {
+        "helpGroup": "Test",
+        "name": "results-dir",
+        "summary": "Output directory for code coverage and JUnit results; defaults to the deploy ID.",
+        "multiple": false,
+        "type": "option"
+      }
+    }
+  },
+  {
+    "id": "plugins",
+    "description": "List installed plugins.",
+    "flags": {
+      "json": {
+        "description": "Format output as json.",
+        "helpGroup": "GLOBAL",
+        "name": "json",
+        "allowNo": false,
+        "type": "boolean"
+      },
+      "core": {
+        "description": "Show core plugins.",
+        "name": "core",
+        "allowNo": false,
+        "type": "boolean"
+      }
+    }
+  },
+  {
+    "id": "version",
+    "flags": {
+      "json": {
+        "description": "Format output as json.",
+        "helpGroup": "GLOBAL",
+        "name": "json",
+        "allowNo": false,
+        "type": "boolean"
+      },
+      "verbose": {
+        "description": "Additionally shows the architecture, node version, operating system, and versions of plugins that the CLI is using.",
+        "name": "verbose",
+        "summary": "Show additional information about the CLI.",
+        "allowNo": false,
+        "type": "boolean"
+      }
+    }
+  }
+]

@@ -1,0 +1,60 @@
+The Salesforce CLI
+
+VERSION
+  @salesforce/cli/2.146.3 darwin-arm64 node-v22.23.1
+
+USAGE
+  $ sf [COMMAND]
+
+TOPICS
+  agent          Commands to work with agents.
+  alias          Use the alias commands to manage your aliases.
+  apex           Use the apex commands to create Apex classes, execute anonymous
+                 blocks, view your logs, run Apex tests, and view Apex test
+                 results.
+  api            Commands to interact with API calls.
+  cmdt           Generate a field for a custom metadata type based on the
+                 provided field type.
+  code-analyzer  Dump the Abstract Syntax Tree (AST) for a given source file.
+  community      Create an Experience Cloud site using a template.
+  config         Commands to configure Salesforce CLI.
+  data           Manage records in your org.
+  dev            Audit messages in a plugin's messages directory to locate
+                 unused messages and missing messages that have references in
+                 source code.
+  devops         Create a DevOps Center pipeline.
+  flow           Display test results for a specific asynchronous test run.
+  force          Legacy commands for backward compatibility.
+  info           Access Salesforce CLI information from the command line.
+  lightning      Preview a Lightning Experience app locally and in real-time,
+                 without deploying it.
+  logic          Use the logic commands to run Apex and Flow tests and view the
+                 test results.
+  org            Commands to create and manage orgs and scratch org users.
+  package        Commands to develop and install unlocked packages and managed
+                 2GP packages.
+  package1       Commands to develop first-generation managed and unmanaged
+                 packages.
+  plugins        list installed plugins
+  project        Work with projects, such as deploy and retrieve metadata.
+  schema         Generate metadata files.
+  sobject        Commands to interact with Salesforce objects.
+  template       Collection of Salesforce templates.
+  ui-bundle      Preview a UI bundle locally and in real-time, without deploying
+                 it to your org.
+  update         update the sf CLI
+  version
+
+COMMANDS
+  autocomplete  Display autocomplete installation instructions.
+  commands      List all sf commands.
+  doctor        Gather CLI configuration data and run diagnostic tests to
+                discover and report potential problems in your environment.
+  help          Display help for sf.
+  plugins       List installed plugins.
+  search        Search for a command.
+  update        update the sf CLI
+  version
+  whatsnew      Display Salesforce CLI release notes on the command line.
+  which         Show which plugin a command is in.
+
