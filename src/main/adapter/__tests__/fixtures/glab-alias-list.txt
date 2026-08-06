@@ -1,0 +1,18 @@
+
+  List all configured aliases and their expansions. Results are sorted                                                  
+  alphabetically by alias name.                                                                                         
+                                                                                                                        
+         
+  USAGE  
+         
+    glab alias list [--flags]      
+            
+  EXAMPLES  
+            
+    # List all configured aliases  
+    glab alias list                
+         
+  FLAGS  
+         
+    -h --help  Show help for this command.
+

@@ -899,3 +899,196 @@ describe('buildShellHelpArgs (shell-function routing)', () => {
     expect(args[1]).toBe(`'sd'\\''k' '--help'`)
   })
 })
+
+describe('parseHelp - glab root (indented all-caps headers)', () => {
+  // glab indents its entire help body by two spaces, so its section headers
+  // read "  USAGE" / "  COMMANDS" / "  FLAGS" rather than gh's column-0
+  // "USAGE". Before the header matcher accepted that indent, no section was
+  // recognised at all and every glab command discovered zero subcommands.
+  const p = parseHelp(fx('glab-root.txt'), ['glab'])
+
+  it('finds the subcommands under the indented COMMANDS header', () => {
+    const names = p.children.map((c) => c.name)
+    expect(p.children).toHaveLength(46)
+    expect(names).toContain('auth')
+    expect(names).toContain('ci')
+    expect(names).toContain('mr')
+    expect(names).toContain('repo')
+    expect(names).toContain('container-registry')
+    expect(names).toContain('check-update')
+  })
+
+  it('drops each command\'s argument synopsis from its description', () => {
+    const byName = (n: string) => p.children.find((c) => c.name === n)!
+    // "mr <command> [command] [--flags]   Create, view, and manage merge requests."
+    expect(byName('mr').short).toBe('Create, view, and manage merge requests.')
+    // "api <endpoint> [--flags]   Make an authenticated request to the GitLab API."
+    expect(byName('api').short).toBe('Make an authenticated request to the GitLab API.')
+    // A bare word inside the synopsis run: "duo <command> prompt [command]".
+    expect(byName('duo').short).toBe('Work with GitLab Duo.')
+    // No synopsis at all — the description must survive untouched.
+    expect(byName('check-update').short).toBe('Check for the latest glab version.')
+  })
+
+  it('keeps the maturity marker that trails a description', () => {
+    const byName = (n: string) => p.children.find((c) => c.name === n)!
+    expect(byName('attestation').short).toBe('Manage software attestations. (EXPERIMENTAL)')
+    expect(byName('search').short).toBe('Search for code and resources in a GitLab project. (BETA)')
+  })
+
+  it('keeps the usage line and long description', () => {
+    expect(p.usage).toBe('glab <command> <subcommand> [command] [--flags]')
+    expect(p.long).toBe(
+      'GLab is an open source GitLab CLI tool that brings GitLab to your command line.'
+    )
+  })
+})
+
+describe('parseHelp - glab mr (nested group, EXAMPLES section)', () => {
+  const p = parseHelp(fx('glab-mr.txt'), ['glab', 'mr'])
+
+  it('reads COMMANDS even though EXAMPLES precedes it', () => {
+    const names = p.children.map((c) => c.name)
+    expect(p.children).toHaveLength(20)
+    expect(names).toContain('create')
+    expect(names).toContain('merge')
+    expect(names).toContain('view')
+    // The EXAMPLES block lists "glab mr create --fill --label bugfix" and
+    // friends; none of those may become subcommands.
+    expect(names).not.toContain('glab')
+  })
+
+  it('strips bracket-heavy argument synopses', () => {
+    const byName = (n: string) => p.children.find((c) => c.name === n)!
+    // "checkout [<id> | <branch> | <url>] [--flags]  Check out an open merge request."
+    expect(byName('checkout').short).toBe('Check out an open merge request.')
+    // "note [command] [<id> | <branch>] [--flags]  Manage comments and ..."
+    expect(byName('note').short).toBe('Manage comments and discussions on a merge request.')
+    // "reopen [<id>... | <branch>...]  Reopen a merge request."
+    expect(byName('reopen').short).toBe('Reopen a merge request.')
+  })
+
+  it('dedents the long description', () => {
+    // glab indents every body line two spaces and right-pads it; neither may
+    // reach the UI, which renders `long` with white-space: pre-wrap.
+    expect(p.long.split('\n').every((l) => !/^\s/.test(l) && !/\s$/.test(l))).toBe(true)
+    expect(p.long).toContain('\nmerge requests, and manage them')
+    // Paragraph breaks inside the description survive.
+    expect(p.long).toContain('\n\nUse `--repo`')
+  })
+})
+
+describe('parseHelp - glab mr list (space-separated short/long flags)', () => {
+  // glab writes "-A --all", not cobra's "-A, --all", and prints no type token
+  // at all. A non-zero default is appended to the description in parentheses.
+  const p = parseHelp(fx('glab-mr-list.txt'), ['glab', 'mr', 'list'])
+  const flag = (n: string) => p.flags.find((f) => f.name === n)!
+
+  it('is a leaf: the "[--flags]" usage line invents no children', () => {
+    expect(p.children).toEqual([])
+    expect(p.flags).toHaveLength(28)
+  })
+
+  it('pairs the short form with the long form across the space', () => {
+    expect(flag('all').shorthand).toBe('A')
+    expect(flag('assignee').shorthand).toBe('a')
+    expect(flag('source-branch').shorthand).toBe('s')
+    // A flag with no short form must not borrow the previous one.
+    expect(flag('author').shorthand).toBeUndefined()
+    expect(flag('not-label').shorthand).toBeUndefined()
+  })
+
+  it('reads the trailing parenthesis as the default and infers a type', () => {
+    expect(flag('page')).toMatchObject({ type: 'int', default: 1, usage: 'Page number.' })
+    expect(flag('per-page')).toMatchObject({ type: 'int', default: 30 })
+    expect(flag('output')).toMatchObject({
+      type: 'string',
+      default: 'text',
+      usage: 'Format output as: text, json.'
+    })
+  })
+
+  it('falls back to string when the output carries no type or default', () => {
+    // glab's help states neither, so a text box — which omits the flag when
+    // left blank — is the only widget that can express every possibility.
+    expect(flag('author').type).toBe('string')
+    expect(flag('author').default).toBeUndefined()
+    expect(flag('assignee').type).toBe('string')
+  })
+})
+
+describe('parseHelp - glab mr create (maturity marker is not a default)', () => {
+  const p = parseHelp(fx('glab-mr-create.txt'), ['glab', 'mr', 'create'])
+  const flag = (n: string) => p.flags.find((f) => f.name === n)!
+
+  it('parses every flag in the block', () => {
+    expect(p.children).toEqual([])
+    expect(p.flags).toHaveLength(29)
+    expect(flag('title').shorthand).toBe('t')
+    expect(flag('draft').shorthand).toBeUndefined()
+  })
+
+  it('does not mistake a trailing "(EXPERIMENTAL)" for a default', () => {
+    expect(flag('recover').default).toBeUndefined()
+    expect(flag('recover').rawDefault).toBeUndefined()
+    expect(flag('recover').usage).toContain('(EXPERIMENTAL)')
+  })
+})
+
+describe('parseHelp - glab snippet (command list with a wrapped usage line)', () => {
+  // glab re-prints the full command path when a subcommand's usage string
+  // overflows, putting one prefixed line in an otherwise bare-name block:
+  //     create  -t <title> <file1>  [<file2>...] [--flags]  Create a new snippet.
+  //     glab snippet create  -t <title> -f <filename>  # reads from stdin
+  // Reading that lone line as the yargs prefixed layout discarded the real
+  // entry and produced a subcommand named "create -t".
+  const p = parseHelp(fx('glab-snippet.txt'), ['glab', 'snippet'])
+
+  it('keeps the bare-name entry and ignores the overflow line', () => {
+    expect(p.children).toEqual([{ name: 'create', short: 'Create a new snippet.' }])
+  })
+})
+
+describe('parseHelp - glab alias list (a single "-h --help" flag)', () => {
+  // Detection cannot demand several space-separated short/long pairs: a leaf
+  // whose only flag is --help has exactly one.
+  const p = parseHelp(fx('glab-alias-list.txt'), ['glab', 'alias', 'list'])
+
+  it('parses the lone flag', () => {
+    expect(p.flags).toHaveLength(1)
+    expect(p.flags[0]).toMatchObject({ name: 'help', shorthand: 'h', type: 'string' })
+  })
+
+  it('does not turn the EXAMPLES block into subcommands', () => {
+    expect(p.children).toEqual([])
+  })
+})
+
+describe('parseHelp - glab snippet create (usage line with no command placeholder)', () => {
+  // This leaf's USAGE block is two run-together synopses:
+  //   glab snippet create -t <title> <file1> glab snippet create -t <title> ...
+  //   [<file2>...] [--flags]
+  // The binary-prefixed-usage fallback (added for ccb) reads that block when a
+  // command has no commands section, so it must not manufacture children here.
+  const p = parseHelp(fx('glab-snippet-create.txt'), ['glab', 'snippet', 'create'])
+
+  it('stays a leaf', () => {
+    expect(p.children).toEqual([])
+    expect(p.flags).toHaveLength(7)
+  })
+
+  it('keeps a leading "(Required)" marker in the description', () => {
+    // Only a trailing parenthesis is a default; this one opens the usage text.
+    const title = p.flags.find((f) => f.name === 'title')!
+    expect(title.usage).toBe('(Required) Title of the snippet.')
+    expect(title.default).toBeUndefined()
+  })
+
+  it('still reads the trailing default on the next flag', () => {
+    expect(p.flags.find((f) => f.name === 'visibility')).toMatchObject({
+      type: 'string',
+      default: 'private',
+      usage: "Limit by visibility: 'public', 'internal', or 'private'."
+    })
+  })
+})

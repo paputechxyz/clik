@@ -17,9 +17,13 @@ function stripAnsi(s: string): string {
 // "FLAGS"). Match both shapes: either a Title-Case line ending in a colon, or
 // an all-uppercase line (colon optional).
 // The all-caps alternative allows `&` between words so SDKMAN's
-// "SUBCOMMANDS & QUALIFIERS" section header is recognised.
+// "SUBCOMMANDS & QUALIFIERS" section header is recognised, and allows leading
+// whitespace because glab indents its whole help body by two spaces ("  USAGE",
+// "  COMMANDS", "  FLAGS"). Indentation stays off the Title-Case alternative:
+// a capitalised, colon-terminated indented line is ordinary help prose far more
+// often than it is a section header.
 const HEADER_RE =
-  /^[A-Z][A-Za-z]+(?:\s+[A-Za-z]+){0,3}(?:\s*\([^)]*\))?:\s*$|^[A-Z][A-Z]+(?:\s+[A-Z&]+){0,3}:?\s*$|^<[A-Z][A-Za-z]+>\s*$/
+  /^[A-Z][A-Za-z]+(?:\s+[A-Za-z]+){0,3}(?:\s*\([^)]*\))?:\s*$|^\s*[A-Z][A-Z]+(?:\s+[A-Z&]+){0,3}:?\s*$|^<[A-Z][A-Za-z]+>\s*$/
 const FLAG_RE = /^\s+(-(\w),\s+)?--([\w-]+)(?:\s+(\S+))?\s{2,}(.*)$/
 // Accept a single tab (go indents commands with one tab) or 2+ spaces.
 const CHILD_RE = /^(?:\t|\s{2,})([A-Za-z0-9][\w-]*)\*?:?\s+(.*)$/
@@ -37,6 +41,23 @@ function matchChild(line: string): { name: string; rest: string } | null {
   const single = line.match(CHILD_RE)
   if (single) return { name: single[1], rest: single[2] }
   return null
+}
+
+// glab prints each subcommand's own argument synopsis between the name and the
+// description column:
+//     mr <command> [command] [--flags]  Create, view, and manage merge requests.
+//     api <endpoint> [--flags]          Make an authenticated request to the GitLab API.
+//     duo <command> prompt [command]    Work with GitLab Duo.
+//     create  -t <title> <file1>  [<file2>...] [--flags]  Create a new snippet.
+// matchChild takes the first word as the name and returns everything else, so
+// drop a leading run of synopsis tokens from that remainder. The run must end
+// on a bracketed placeholder followed by a 2+ space column gap: that gap is
+// what marks it as layout rather than the opening words of a real description.
+const ARG_SYNOPSIS_RE =
+  /^(?:(?:<[^>]*>|\[[^\]]*\]|-{1,2}[\w-]+|[a-z][\w-]*)\s+)*(?:<[^>]*>|\[[^\]]*\])\s{2,}(?=\S)/
+
+function stripArgSynopsis(rest: string): string {
+  return rest.replace(ARG_SYNOPSIS_RE, '').trim()
 }
 const SKIP_CHILDREN = new Set(['help', 'completion'])
 const MAX_DEPTH = 6
@@ -114,12 +135,17 @@ function coerceDefault(type: FlagType, raw: string): Flag['default'] {
   }
 }
 
-function foldLines(block: string[]): string[] {
+const isFlagStart = (line: string): boolean => /^\s+(-\w,\s+)?--/.test(line)
+
+// Join each flag entry with the wrapped continuation lines that follow it.
+// `startsEntry` identifies where a new entry begins; layouts that don't use
+// cobra's "-x, --long" shape (glab separates the two forms with a space) pass
+// their own matcher so their continuations aren't folded into the entry above.
+function foldLines(block: string[], startsEntry: (line: string) => boolean = isFlagStart): string[] {
   const out: string[] = []
   for (const line of block) {
     if (line.trim() === '') continue
-    const isFlagStart = /^\s+(-\w,\s+)?--/.test(line)
-    if (isFlagStart) out.push(line)
+    if (startsEntry(line)) out.push(line)
     else if (out.length > 0) out[out.length - 1] += ' ' + line.trim()
   }
   return out
@@ -336,11 +362,76 @@ function parseShortFlags(block: string[]): Flag[] {
   return out
 }
 
+// glab (GitLab CLI) renders its own flag table: the short and long forms are
+// separated by a space rather than cobra's comma, there is no type token at
+// all, and a non-zero default is appended to the description in parentheses:
+//     -h --help           Show help for this command.
+//     --draft             Mark merge request as a draft.
+//     -F --output         Format output as: text, json. (text)
+//     -P --per-page       Number of items to list per page. (30)
+const GLAB_FLAG_RE = /^\s+(?:-(\w)\s+)?--([\w-]+)\s{2,}(.*)$/
+const GLAB_FLAG_START = /^\s+(?:-\w\s+)?--[\w-]/
+// A short form separated from the long form by whitespace instead of ", " is
+// what distinguishes this layout from cobra's. One such line is enough — a
+// command whose only flag is "-h --help" still has to parse — but the block
+// must not also contain cobra's comma form, which keeps a stray line in some
+// other CLI's help from claiming the whole block.
+const GLAB_SHORT_LONG = /^\s+-\w\s+--[\w-]+\s{2,}\S/
+const COBRA_SHORT_LONG = /^\s+-\w,\s+--[\w-]/
+
+function looksLikeGlabFlags(block: string[]): boolean {
+  return block.some((l) => GLAB_SHORT_LONG.test(l)) && !block.some((l) => COBRA_SHORT_LONG.test(l))
+}
+
+// glab appends a maturity marker in the same trailing-parenthesis position it
+// uses for defaults ("(EXPERIMENTAL)" on `mr create --recover`). Case is not a
+// reliable way to tell them apart — `api --method` really does default to
+// "(GET)" — so match the marker vocabulary itself.
+const GLAB_TRAILING_PAREN = /\(([^()]+)\)\s*$/
+const GLAB_MATURITY = /^(?:EXPERIMENTAL|BETA|DEPRECATED)$/
+
+function inferGlabType(raw: string): FlagType {
+  if (raw === 'true' || raw === 'false') return 'bool'
+  if (/^-?\d+$/.test(raw)) return 'int'
+  if (/^-?\d*\.\d+$/.test(raw)) return 'float'
+  if (/^\[.*\]$/.test(raw)) return 'stringSlice'
+  return 'string'
+}
+
+function parseGlabFlags(block: string[]): Flag[] {
+  const out: Flag[] = []
+  for (const line of foldLines(block, (l) => GLAB_FLAG_START.test(l))) {
+    const m = line.match(GLAB_FLAG_RE)
+    if (!m) continue
+    const shorthand = m[1]
+    const name = m[2]
+    let usage = m[3].trim()
+
+    // With no type token in the output there is nothing to read a type from
+    // beyond the default, so flags without one fall back to 'string'. That is
+    // the recoverable direction: a text box left blank omits the flag, whereas
+    // a checkbox would leave every value-taking flag with no way to supply one.
+    let type: FlagType = 'string'
+    let def: Flag['default']
+    let rawDefault: string | undefined
+    const dm = usage.match(GLAB_TRAILING_PAREN)
+    if (dm && dm.index !== undefined && !GLAB_MATURITY.test(dm[1])) {
+      rawDefault = dm[1]
+      type = inferGlabType(rawDefault)
+      def = coerceYargsDefault(type, rawDefault)
+      usage = usage.slice(0, dm.index).trim()
+    }
+    out.push({ name, shorthand, type, usage: usage.replace(/\s{2,}/g, ' ').trim(), default: def, rawDefault })
+  }
+  return out
+}
+
 function parseFlagsAuto(block: string[]): Flag[] {
   if (looksLikeShortFlags(block)) return parseShortFlags(block)
   if (looksLikeYargsFlags(block)) return parseYargsFlags(block)
   if (looksLikeKubectlFlags(block)) return parseKubectlFlags(block)
   if (looksLikeGetoptFlags(block)) return parseGetoptFlags(block)
+  if (looksLikeGlabFlags(block)) return parseGlabFlags(block)
   return parseFlags(block)
 }
 
@@ -508,9 +599,19 @@ function parseChildren(block: string[], prefixPath?: string[]): { name: string; 
   const prefix = prefixPath && prefixPath.length > 0 ? prefixPath.join(' ') : ''
   // yargs prefixes every command line with the binary (and parent path), e.g.
   // "  opencode completion   generate..." or "  opencode mcp add   add an MCP
-  // server". When such a prefix is present, only accept lines that carry it;
+  // server". When that prefix is the layout, only accept lines that carry it;
   // otherwise fall back to cobra's bare-name layout ("  search   Search...").
-  const prefixed = prefix !== '' && block.some((l) => new RegExp(`^\\s{2,}${escapeRe(prefix)}\\s`).test(l))
+  // The test is a majority of the entry lines rather than merely one of them:
+  // a bare-name block can contain a single prefixed line without being in this
+  // layout at all. glab's `snippet` block is exactly that — a subcommand whose
+  // usage string spans two lines gets its overflow re-printed with the full
+  // path, and treating that lone line as the layout dropped every real entry:
+  //     create  -t <title> <file1>   [<file2>...] [--flags]  Create a new snippet.
+  //     glab snippet create  -t <title> -f <filename>  # reads from stdin
+  const prefixRe = prefix === '' ? null : new RegExp(`^\\s{2,}${escapeRe(prefix)}\\s`)
+  const entryLines = prefixRe ? block.filter((l) => matchChild(l) !== null) : []
+  const prefixedLines = prefixRe ? entryLines.filter((l) => prefixRe.test(l)) : []
+  const prefixed = prefixedLines.length * 2 > entryLines.length
   if (prefixed) {
     const re = new RegExp(`^\\s{2,}${escapeRe(prefix)}\\s+(\\S.*)$`)
     for (const line of block) {
@@ -521,8 +622,11 @@ function parseChildren(block: string[], prefixPath?: string[]): { name: string; 
     }
   } else {
     for (const line of block) {
+      // In a bare-name block a line that repeats the full command path is the
+      // overflow described above, never an entry of its own.
+      if (prefixRe && prefixRe.test(line)) continue
       const m = matchChild(line)
-      if (m) out.push({ name: m.name, short: m.rest.trim() })
+      if (m) out.push({ name: m.name, short: stripArgSynopsis(m.rest) })
     }
   }
 
@@ -543,11 +647,29 @@ function parseChildren(block: string[], prefixPath?: string[]): { name: string; 
   return out.filter((c) => !/^[A-Z]{2,}$/.test(c.name))
 }
 
+// glab lays its help out as a fixed-width block: every line of the description
+// is indented two spaces and right-padded with trailing spaces. `.flag-long`
+// renders with `white-space: pre-wrap`, so that padding would show up in the UI
+// as a ragged left margin and stray line breaks. Drop the trailing spaces and
+// the indent shared by every line — relative indentation inside the block (an
+// example, a bullet list) survives, and it's a no-op for unindented help.
+function dedent(text: string): string {
+  const lines = text.split('\n').map((l) => l.replace(/[ \t]+$/, ''))
+  const indents = lines.filter((l) => l !== '').map((l) => /^[ \t]*/.exec(l)![0].length)
+  const common = indents.length > 0 ? Math.min(...indents) : 0
+  return lines
+    .map((l) => l.slice(common))
+    .join('\n')
+    .trim()
+}
+
 export function parseHelp(text: string, prefixPath?: string[]): ParsedHelp {
   const lines = stripAnsi(text.replace(/\r\n/g, '\n')).split('\n')
   let headerIdx = lines.findIndex((l) => HEADER_RE.test(l))
   if (headerIdx === -1) headerIdx = lines.length
-  let long = lines.slice(0, headerIdx).join('\n').trim()
+  // Left untrimmed: dedent() needs the original indent of every line, including
+  // the first, to find the one they share. It trims the result.
+  let long = lines.slice(0, headerIdx).join('\n')
 
   const sections = new Map<string, string[]>()
   let cur = ''
@@ -620,7 +742,7 @@ export function parseHelp(text: string, prefixPath?: string[]): ParsedHelp {
         skippingUsage = false
         filtered.push(l)
       }
-      long = filtered.join('\n').trim()
+      long = filtered.join('\n')
     }
     for (let i = 0; i < lines.length; i++) {
       if (consumed.has(i)) continue
@@ -701,7 +823,7 @@ export function parseHelp(text: string, prefixPath?: string[]): ParsedHelp {
     else flagBlocks.push(...body(header))
   }
   return {
-    long,
+    long: dedent(long),
     usage: usageLine.trim(),
     flags: [...parseFlagsAuto(flagBlocks), ...headerlessFlags],
     globalFlags: parseFlagsAuto(globalFlagBlocks),

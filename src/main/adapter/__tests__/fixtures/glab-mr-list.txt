@@ -1,0 +1,56 @@
+
+  Defaults to open merge requests. Use `--all` to include closed                                                        
+  and merged requests. Use `--group` to list for a group instead                                                        
+  of the current project.                                                                                               
+                                                                                                                        
+         
+  USAGE  
+         
+    glab mr list [--flags]                                            
+            
+  EXAMPLES  
+            
+    glab mr list --all                                                
+    glab mr ls -a                                                     
+    glab mr list --assignee=@me                                       
+    glab mr list --reviewer=@me                                       
+    glab mr list --source-branch=new-feature                          
+    glab mr list --target-branch=main                                 
+    glab mr list --search "this adds feature X"                       
+    glab mr list --label needs-review                                 
+    glab mr list --not-label waiting-maintainer-feedback,subsystem-x  
+    glab mr list -M --per-page 10                                     
+    glab mr list --draft                                              
+    glab mr list --not-draft                                          
+         
+  FLAGS  
+         
+    -A --all            Get all merge requests.
+    -a --assignee       Get only merge requests assigned to users. Multiple users can be comma-separated or specified by repeating the flag.
+    --author            Filter merge request by author <username>.
+    -c --closed         Get only closed merge requests.
+    --created-after     Filter merge requests created after a certain date (ISO 8601 format).
+    --created-before    Filter merge requests created before a certain date (ISO 8601 format).
+    --deployed-after    Filter merge requests deployed after a certain date (ISO 8601 format).
+    --deployed-before   Filter merge requests deployed before a certain date (ISO 8601 format).
+    -d --draft          Filter by draft merge requests.
+    --environment       Filter merge requests deployed to the given environment <name>.
+    -g --group          Select a group/subgroup. This option is ignored if a repo argument is set.
+    -h --help           Show help for this command.
+    --jq                Filter JSON output with a jq expression.
+    -l --label          Filter merge request by label <name>. Multiple labels can be comma-separated or specified by repeating the flag.
+    -M --merged         Get only merged merge requests.
+    -m --milestone      Filter merge request by milestone <id>.
+    --not-draft         Filter by non-draft merge requests.
+    --not-label         Filter merge requests by not having label <name>. Multiple labels can be comma-separated or specified by repeating the flag.
+    -o --order          Order merge requests by <field>. Order options: created_at, updated_at, merged_at, title, priority, label_priority, milestone_due, and popularity.
+    -F --output         Format output as: text, json. (text)
+    -p --page           Page number. (1)
+    -P --per-page       Number of items to list per page. (30)
+    -R --repo           Select another repository. You can use either OWNER/REPO or GROUP/NAMESPACE/REPO. The full URL or Git URL is also accepted.
+    -r --reviewer       Get only merge requests with users as reviewer. Multiple users can be comma-separated or specified by repeating the flag.
+    --search            Filter by <string> in title and description.
+    -S --sort           Sort direction for --order field: asc or desc.
+    -s --source-branch  Filter by source branch <name>.
+    -t --target-branch  Filter by target branch <name>.
+
