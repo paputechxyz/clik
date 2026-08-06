@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
-import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import type { Run } from '../store/useAppStore'
@@ -18,6 +17,19 @@ const ACTIVE_MATCH_BG = '#5b8cff'
 // Cap on how many matches get a background decoration. Beyond this we still
 // count + navigate them, but stop painting to keep large outputs responsive.
 const HIGHLIGHT_CAP = 500
+
+// Slop subtracted before flooring the row count. The cell height xterm renders
+// at is the product of several roundings (device-pixel char height -> floored by
+// lineHeight -> canvas height rounded to whole CSS px -> divided back by rows),
+// so the height a given row count actually paints at can land up to half a pixel
+// above what the current cell height predicts — and .term-host's overflow:hidden
+// turns any overhang into a clipped line. Half a pixel covers that and any
+// floating-point noise; a bigger guard would start costing a whole visible row.
+const BOTTOM_GUARD_PX = 0.5
+// Gutter kept free on the right so text never runs under the scrollbar slider
+// (the slider is an overlay in xterm 6, it takes no layout space). Same width
+// FitAddon reserves.
+const SCROLLBAR_GUTTER_PX = 14
 
 interface Match {
   row: number // absolute buffer line
@@ -109,6 +121,61 @@ function revealMatch(term: Terminal, m: Match): void {
   }
 }
 
+/**
+ * Size the terminal to its host from *measured* geometry — this replaces
+ * `FitAddon.fit()`, which gets the row count wrong for our layout.
+ *
+ * FitAddon derives the space available from `getComputedStyle(parent).height`,
+ * which under `box-sizing: border-box` is the host's *border-box* height, and
+ * then subtracts only the padding of the terminal element itself — which is
+ * zero, because `.term-host` is the element carrying the padding. So the host's
+ * padding gets handed out as usable space: xterm keeps one row more than fits,
+ * `.term-host`'s overflow:hidden clips it, and the bottom line shows up sliced
+ * in half as soon as you scroll far enough for that row to hold text. Sweeping
+ * host heights in the running app, its row count overhung the content box in 54
+ * of 60 sizes, by up to 14px of an 18px row. The same arithmetic over-provisions
+ * the width, pushing the last column under the right padding.
+ *
+ * So: measure the cell size off the rendered screen box (every rounding xterm
+ * applied is already baked into it), measure the space from the screen's own
+ * top-left corner to the host's content edges (no padding bookkeeping, and any
+ * future border or inset is picked up for free), and floor. One `resize` call,
+ * biased downward — an unused strip of terminal background beats a clipped line.
+ */
+function fitTerminal(term: Terminal, host: HTMLElement): void {
+  const screen = term.element?.querySelector('.xterm-screen') as HTMLElement | null
+  if (!screen) return
+  const box = screen.getBoundingClientRect()
+  const cellW = box.width / term.cols
+  const cellH = box.height / term.rows
+  // Zero while the host is hidden or not laid out yet; a later pass retries.
+  if (!(cellW > 0) || !(cellH > 0)) return
+
+  const style = getComputedStyle(host)
+  const hostBox = host.getBoundingClientRect()
+  const right =
+    hostBox.right -
+    (parseFloat(style.paddingRight) || 0) -
+    (parseFloat(style.borderRightWidth) || 0)
+  const bottom =
+    hostBox.bottom -
+    (parseFloat(style.paddingBottom) || 0) -
+    (parseFloat(style.borderBottomWidth) || 0)
+
+  const gutter = term.options.overviewRuler?.width ?? SCROLLBAR_GUTTER_PX
+  const cols = Math.max(2, Math.floor((right - gutter - box.left) / cellW))
+  const rows = Math.max(1, Math.floor((bottom - BOTTOM_GUARD_PX - box.top) / cellH))
+  if (cols !== term.cols || rows !== term.rows) term.resize(cols, rows)
+
+  // Belt and braces: the resize changes the canvas height, and xterm re-derives
+  // its cell height from that, so the rows we just asked for can paint a hair
+  // taller than the ones we measured. Check the box that actually got rendered
+  // and hand a row back rather than let the last one be sliced.
+  if (term.rows > 1 && screen.getBoundingClientRect().bottom > bottom) {
+    term.resize(term.cols, term.rows - 1)
+  }
+}
+
 export function TerminalView({ run }: { run: Run }): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
@@ -187,19 +254,13 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
       cursorBlink: true,
       allowProposedApi: true
     })
-    const fit = new FitAddon()
-    term.loadAddon(fit)
     // Detect http(s) URLs in PTY output and open them via shell.openExternal
     // (the main process intercepts window.open for this purpose). A custom
     // handler is needed because the addon's default opener calls window.open()
     // with no URL, which Electron routes to about:blank.
     term.loadAddon(new WebLinksAddon((_e, uri) => window.open(uri, '_blank')))
     term.open(container)
-    try {
-      fit.fit()
-    } catch {
-      // container not sized yet; ResizeObserver will retry
-    }
+    fitTerminal(term, container)
     restoringRef.current = true
     term.write(run.output, () => {
       restoringRef.current = false
@@ -361,14 +422,28 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
     }
     container.addEventListener('keydown', onShiftEnter, true)
 
-    const ro = new ResizeObserver(() => {
-      try {
-        fit.fit()
-      } catch {
-        // ignore transient fit errors
-      }
-    })
+    // Every path that can change the host box or the cell height re-runs the
+    // measured fit. `alive` keeps the async ones (font load, rAF, DPR change)
+    // from touching a disposed terminal.
+    let alive = true
+    const refit = (): void => {
+      if (alive) fitTerminal(term, container)
+    }
+
+    const ro = new ResizeObserver(refit)
     ro.observe(container)
+
+    // The mount-time fit measures a layout that has not painted yet, and runs
+    // before the monospace font is guaranteed resolved — both move the numbers
+    // fitTerminal reads.
+    const raf = requestAnimationFrame(refit)
+    void document.fonts.ready.then(refit)
+
+    // Moving the window to a display with a different scale factor changes the
+    // device-pixel cell height without resizing the container, so nothing above
+    // would fire.
+    const dpr = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`)
+    dpr.addEventListener('change', refit)
 
     // Write PTY data straight to xterm. Going through the store's run.output
     // for every chunk caused (1) a per-event React re-render + 1MB string
@@ -381,7 +456,10 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
     })
 
     return () => {
+      alive = false
       unsubBus()
+      cancelAnimationFrame(raf)
+      dpr.removeEventListener('change', refit)
       ro.disconnect()
       container.removeEventListener('mousedown', onDown)
       container.removeEventListener('keydown', onShiftEnter, true)

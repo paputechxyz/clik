@@ -105,10 +105,20 @@ for per-keystroke throughput; `open`/`openShell`/`kill` use `invoke`.
 
 ## Run output
 
-Per-run output renders in a real terminal emulator (`@xterm/xterm` +
-`@xterm/addon-fit`) via `TerminalView`, backed by a PTY (see Terminal model).
-Keystrokes go `term.onData -> pty.input`; resize goes `term.onResize ->
-pty.resize`. The store keeps an accumulated `output` string per tab so
+Per-run output renders in a real terminal emulator (`@xterm/xterm`) via
+`TerminalView`, backed by a PTY (see Terminal model). Keystrokes go
+`term.onData -> pty.input`; resize goes `term.onResize -> pty.resize`.
+
+Sizing is `TerminalView`'s own `fitTerminal`, not `@xterm/addon-fit`: the addon
+reads `getComputedStyle(parent).height`, which is the *border-box* height under
+our global `box-sizing: border-box`, and only subtracts padding declared on the
+terminal element — but the padding lives on `.term-host`, the parent. It
+therefore hands that padding out as usable space, xterm keeps a row (and a
+column) more than fits, and `.term-host`'s `overflow: hidden` clips the bottom
+line. `fitTerminal` instead measures the rendered `.xterm-screen` box for the
+real cell size and the host's content edges for the space, floors, and
+re-measures once to confirm nothing overhangs. It re-runs on container resize,
+after the first frame, on `document.fonts.ready`, and on DPR change. The store keeps an accumulated `output` string per tab so
 switching tabs preserves scrollback on remount; `TerminalView` writes the delta
 (`computeWriteDelta`) and resets+rewrites if the head is trimmed by MAX_OUTPUT.
 
