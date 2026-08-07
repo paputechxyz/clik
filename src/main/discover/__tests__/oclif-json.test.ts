@@ -2,29 +2,14 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
-import { looksLikeOclif, parseCommandsJson, buildOclifTree, type OclifCommandJson } from '../oclif'
+import { parseCommandsJson, buildOclifTree, type OclifCommandJson } from '../oclif-json'
 import type { CommandNode } from '../../../shared/types'
+
+// Recognising an oclif CLI — the gate this source runs behind — is tested with
+// the other dialects, in ./dialects.test.ts.
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const fx = (name: string): string => readFileSync(path.join(here, 'fixtures', name), 'utf8')
-
-describe('looksLikeOclif', () => {
-  it('recognises the Salesforce CLI root help', () => {
-    expect(looksLikeOclif(fx('sf-root.txt'))).toBe(true)
-    expect(looksLikeOclif(fx('sf-agent.txt'))).toBe(true)
-  })
-
-  it('does not claim a cobra or gh help layout', () => {
-    // gh shares the all-caps headers and has a COMMANDS list; only oclif puts
-    // "$ " in front of its usage line.
-    expect(looksLikeOclif(fx('gh-root.txt'))).toBe(false)
-    expect(looksLikeOclif(fx('root.txt'))).toBe(false)
-    expect(looksLikeOclif(fx('docker-root.txt'))).toBe(false)
-    expect(looksLikeOclif(fx('glab-root.txt'))).toBe(false)
-    expect(looksLikeOclif(fx('kubectl-root.txt'))).toBe(false)
-    expect(looksLikeOclif(fx('opencode-root.txt'))).toBe(false)
-  })
-})
 
 describe('parseCommandsJson', () => {
   it('parses the array out of a stream that carries other output', () => {

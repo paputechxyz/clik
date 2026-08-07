@@ -40,36 +40,64 @@ the arch matches.
 ## Conventions
 
 - Electron main/preload compile to CommonJS; do not set `"type": "module"`.
-- Never spawn with `shell: true`. The only `child_process.spawn` sites are
-  `--help` discovery (`adapter/cobra.ts`), the oclif probe (`adapter/oclif.ts`)
-  and shell-env capture (`shell-env.ts`); all pass an argv array with
-  `shell: false`. Runs execute in a PTY, not spawn.
+- Never spawn with `shell: true`. The only `child_process.spawn` sites are the
+  discovery probe (`discover/probe.ts`) and shell-env capture (`shell-env.ts`);
+  both pass an argv array with `shell: false`. Runs execute in a PTY, not spawn.
 - Renderer talks to main only through `window.clik` (contextBridge).
   contextIsolation is on; nodeIntegration is off. Do not bypass.
 - Shared types live in `src/shared/types.ts` and are imported by all three
   contexts (main, preload, renderer).
-- The cobra adapter is a pure-ish module: `parseHelp(text)` has no side effects
-  and is unit-tested from `--help` fixtures under
-  `src/main/adapter/__tests__/fixtures/`. `discoverTree` shells out.
-- Discovery has two routes, picked in `adapter/index.ts`. An oclif CLI carrying
-  @oclif/plugin-commands describes itself: one `<bin> commands --json` returns
-  every command with typed flag definitions, so `sf`'s 270 commands arrive in
-  ~1.5s instead of the ~330 sequential `--help` spawns (minutes) the scrape
-  needs, and the JSON also holds what help text omits (aliases like
-  `plugins add`, enum `options`, `required`). The route is gated on the root
-  help's shape (`looksLikeOclif`) so `commands --json` never runs against a CLI
-  that isn't oclif. Everything else — and any oclif CLI without that plugin —
-  falls back to the recursive `--help` scrape, which understands the oclif
-  layout too (`TOPICS` + `COMMANDS`, entries prefixed with the command path,
-  `--name=<value>` flag tables).
-- Help capture prefers stdout and only falls back to stderr when stdout carries
-  no help body (`looksLikeHelpBody`). Merging the two fed `sf`'s node
-  diagnostics into the parser, and their indented `name:`/`root:`/`type:` lines
-  joined the tree as subcommands of every group — 350 phantom nodes, each one
-  costing a `--help` spawn.
+- Discovery lives in `src/main/discover/` and is not cobra-specific; see
+  **Discovery** below before adding support for a CLI.
 - macOS-first. Title bar uses `hiddenInset` (macOS only; guarded by a
   platform check). Closing a run tab must kill its PTY (`PtyManager.kill` /
   `pty:kill`, SIGHUP).
+
+## Discovery
+
+`src/main/discover/` turns a CLI into a `CommandTree`. Nothing in it is
+cobra-specific — cobra is one dialect among eight, and the parser has met ~16
+real CLIs (fixtures in `discover/__tests__/fixtures/`).
+
+```
+index.ts        discoverTree / discoverCommand: recognise the dialect, then walk
+                the source list. Timing, node counting and logging live here.
+source.ts       CommandSource — one way of learning a tree; returns null to decline
+probe.ts        the only spawn site: timeout+SIGKILL, stdout-vs-stderr choice,
+                Windows .cmd routing, shell-function invocation, man-page retry
+oclif-json.ts   source: `<bin> commands --json` (one call, typed flags)
+help-scrape.ts  source: recursive `--help` walk (one spawn per command)
+help-parse.ts   parseHelp(text, prefixPath, dialect) — pure, fixture-tested
+sections.ts     splits a help body into named sections; pure
+dialects/       one file per CLI family: how it prints its flag table
+```
+
+- **Sources** are tried in order and the scrape is last, because it always
+  answers. An oclif CLI carrying @oclif/plugin-commands describes itself: one
+  `commands --json` returns every command with typed flag definitions, so `sf`'s
+  270 commands arrive in ~2s instead of the ~330 sequential `--help` spawns
+  (minutes) the scrape needs, and the JSON holds what help text omits (aliases
+  like `plugins add`, enum `options`, `required`). Adding a route means adding a
+  source, not a branch.
+- **Dialects** are recognised once, from the root help, and the answer is carried
+  down the whole tree. `rank` on each dialect is the entire ordering contract
+  (oclif must outrank yargs: an oclif description carries `[default: …]`, which
+  reads as a yargs tag) — state the conflict next to the rank, in the dialect's
+  own file. Recognition is not exclusive: when the recognised dialect doesn't own
+  a block, the ranked list decides, which is what makes kubectl work — its root
+  prints cobra-shaped flags and its subcommands don't.
+- Adding a CLI family: a fixture, a file in `dialects/`, a rank. No existing
+  dialect and no call site changes. git is the exception in the registry — its
+  usage-dump layout has no flag *section* to claim, so `help-parse.ts` reaches
+  `dialects/git.ts` directly.
+- The probe prefers stdout and falls back to stderr only when stdout carries no
+  help body (`looksLikeHelpBody`). Merging the two fed `sf`'s node diagnostics
+  into the parser, and their indented `name:`/`root:`/`type:` lines joined the
+  tree as subcommands of every group — 350 phantom nodes, each costing a
+  `--help` spawn.
+- The root `--help` is fetched once per discovery and shared: recognition reads
+  it, the oclif route takes its topic summaries from it, and the scrape uses it
+  as the root node's help.
 
 ## Windows support
 
