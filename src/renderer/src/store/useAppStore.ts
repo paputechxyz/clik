@@ -13,7 +13,7 @@ import type {
 } from '../../../shared/types'
 import {
   buildArgv,
-  collapseWrappedNewlines,
+  chainMultilineCommand,
   commandPreview,
   configSignature,
   shellQuote,
@@ -612,7 +612,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   addRawCommand(command) {
-    const trimmed = collapseWrappedNewlines(command).trim()
+    const trimmed = chainMultilineCommand(command)
     if (trimmed === '') return
     const item: SavedCommandItem = {
       id: uid(),

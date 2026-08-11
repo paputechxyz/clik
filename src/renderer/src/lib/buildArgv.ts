@@ -200,6 +200,70 @@ export function shellSplit(input: string): string[] {
   return out
 }
 
+// Walks `input` the way `shellSplit` does (tracking quotes and $()/${}/()/{}/``
+// nesting) and records, for every index, whether it sits inside an open quote
+// or a substitution/group. A real shell would not treat `;`, whitespace, or a
+// stray newline there as a top-level separator — `collapseWrappedNewlines`
+// and `hasTopLevelSemicolon` below both key off this.
+function computeShellProtection(input: string): boolean[] {
+  const protectedAt: boolean[] = new Array(input.length).fill(false)
+  let quote: '"' | "'" | null = null
+  let escaped = false
+  const stack: string[] = []
+
+  for (let i = 0; i < input.length; i++) {
+    const c = input[i]
+    const next = input[i + 1] ?? ''
+    protectedAt[i] = quote !== null || stack.length > 0
+
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (c === '\\') {
+      escaped = true
+      continue
+    }
+    if (quote) {
+      if (c === quote) quote = null
+      continue
+    }
+    if (stack.length === 0 && (c === '"' || c === "'")) {
+      quote = c
+      continue
+    }
+    if (c === '$' && next === '(') {
+      stack.push(')')
+      i++
+      continue
+    }
+    if (c === '$' && next === '{') {
+      stack.push('}')
+      i++
+      continue
+    }
+    if (c === '(') {
+      stack.push(')')
+      continue
+    }
+    if (c === '{') {
+      stack.push('}')
+      continue
+    }
+    if (c === '`') {
+      if (stack.length > 0 && stack[stack.length - 1] === '`') stack.pop()
+      else stack.push('`')
+      continue
+    }
+    if (stack.length > 0) {
+      const top = stack[stack.length - 1]
+      if (c === top) stack.pop()
+      continue
+    }
+  }
+  return protectedAt
+}
+
 // xterm.js can leave a hard `\n` at a soft line-wrap boundary when a long
 // terminal line is later read back via getSelection() — its `isWrapped` row
 // flag is known to desync after a resize/reflow or a shell line-editor redraw
@@ -209,79 +273,48 @@ export function shellSplit(input: string): string[] {
 // unambiguous signal the break is a wrap artifact, so drop it there. A `\n`
 // at the top level is left alone — it may be a genuine multi-line paste.
 export function collapseWrappedNewlines(input: string): string {
+  const protectedAt = computeShellProtection(input)
   let out = ''
-  let quote: '"' | "'" | null = null
-  let escaped = false
-  const stack: string[] = []
-
   for (let i = 0; i < input.length; i++) {
-    const c = input[i]
-    const next = input[i + 1] ?? ''
-
-    if (escaped) {
-      out += c
-      escaped = false
-      continue
-    }
-    if (c === '\\') {
-      out += c
-      escaped = true
-      continue
-    }
-
-    if (quote) {
-      if (c === quote) quote = null
-      else if (c === '\n') continue
-      out += c
-      continue
-    }
-
-    if (stack.length === 0 && (c === '"' || c === "'")) {
-      quote = c
-      out += c
-      continue
-    }
-
-    if (c === '$' && next === '(') {
-      out += '$('
-      stack.push(')')
-      i++
-      continue
-    }
-    if (c === '$' && next === '{') {
-      out += '${'
-      stack.push('}')
-      i++
-      continue
-    }
-    if (c === '(') {
-      out += '('
-      stack.push(')')
-      continue
-    }
-    if (c === '{') {
-      out += '{'
-      stack.push('}')
-      continue
-    }
-    if (c === '`') {
-      if (stack.length > 0 && stack[stack.length - 1] === '`') stack.pop()
-      else stack.push('`')
-      out += c
-      continue
-    }
-
-    if (stack.length > 0) {
-      if (c === '\n') continue
-      const top = stack[stack.length - 1]
-      if (c === top) stack.pop()
-      out += c
-      continue
-    }
-
-    out += c
+    if (input[i] === '\n' && protectedAt[i]) continue
+    out += input[i]
   }
   return out
+}
+
+function hasTopLevelSemicolon(line: string): boolean {
+  const protectedAt = computeShellProtection(line)
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === ';' && !protectedAt[i]) return true
+  }
+  return false
+}
+
+// A line that's part of one multi-line shell construct (an if/for/while/case
+// block, or a line already ending in a continuation) shouldn't be torn apart
+// and re-joined with `&&` — that could change what it does.
+const SHELL_BLOCK_KEYWORD_RE =
+  /^(if|then|elif|else|fi|for|while|until|do|done|case|esac|select|function)\b|^[{}]$/
+const TRAILING_CONTINUATION_RE = /(&&|\|\||\||\\)\s*$/
+
+// A raw command saved from a multi-line terminal paste/selection is usually a
+// sequence of commands the user ran one Enter at a time — injecting it
+// verbatim just resubmits them the same way, one line at a time, instead of
+// as one run. Chain independent-looking lines into a single `&&`-joined
+// command (kept readable with backslash continuations) so re-injecting it
+// runs the whole sequence in one submission, stopping early if a step fails.
+// A line with its own top-level `;` (e.g. `set -a; source x; set +a`) is
+// wrapped in `{ ...; }` so it stays one unit in the chain.
+export function chainMultilineCommand(input: string): string {
+  const collapsed = collapseWrappedNewlines(input).trim()
+  const trimmedLines = collapsed.split('\n').map((l) => l.trim())
+  const lines = trimmedLines.filter((l) => l !== '')
+  if (lines.length < 2) return collapsed
+  if (lines.some((l) => SHELL_BLOCK_KEYWORD_RE.test(l) || TRAILING_CONTINUATION_RE.test(l))) {
+    return collapsed
+  }
+  const units = lines.map((l) => (hasTopLevelSemicolon(l) ? `{ ${l.endsWith(';') ? l : `${l};`} }` : l))
+  return units.join(' && \\\n')
 }
 
 // Stable signature for a flag+positional configuration. Used to detect whether

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildArgv,
+  chainMultilineCommand,
   collapseWrappedNewlines,
   commandPreview,
   commandPreviewTokens,
@@ -167,5 +168,51 @@ describe('collapseWrappedNewlines', () => {
   it('is a no-op for text with no newlines', () => {
     const cmd = 'cloudflared tunnel run --token $(printf \'{"a":"b"}\' | base64)'
     expect(collapseWrappedNewlines(cmd)).toBe(cmd)
+  })
+})
+
+describe('chainMultilineCommand', () => {
+  it('chains independent lines with && and wraps a `;`-list line so it stays one unit', () => {
+    const pasted = [
+      'export PATH="$HOME/Library/Python/3.9/bin:$PATH"',
+      'cd /Users/patrickpu/Documents/workspace.nosync/workspaces/ruby-test-lab/nue-ucc',
+      'set -a; source api/credit_threshold_alert/.env.local; set +a',
+      'python3 -m pytest api/credit_threshold_alert/test_runner.py -v -s'
+    ].join('\n')
+    expect(chainMultilineCommand(pasted)).toBe(
+      [
+        'export PATH="$HOME/Library/Python/3.9/bin:$PATH" && \\',
+        'cd /Users/patrickpu/Documents/workspace.nosync/workspaces/ruby-test-lab/nue-ucc && \\',
+        '{ set -a; source api/credit_threshold_alert/.env.local; set +a; } && \\',
+        'python3 -m pytest api/credit_threshold_alert/test_runner.py -v -s'
+      ].join('\n')
+    )
+  })
+
+  it('leaves a single line untouched', () => {
+    expect(chainMultilineCommand('echo hi')).toBe('echo hi')
+  })
+
+  it('leaves an if/fi block alone rather than joining it with &&', () => {
+    const script = ['if [ -f foo ]; then', '  echo yes', 'fi'].join('\n')
+    expect(chainMultilineCommand(script)).toBe(script)
+  })
+
+  it('leaves already-continued lines alone (user already chained them)', () => {
+    const already = ['foo &&', 'bar'].join('\n')
+    expect(chainMultilineCommand(already)).toBe(already)
+  })
+
+  it('still collapses a wrap-artifact newline stuck inside a quote before chaining', () => {
+    const wrapped = [
+      'cloudflared tunnel run --token $(printf \'{"a":"5a6f2e7f32bb76e2412166042441fc\n9a"}\' | base64)',
+      'echo done'
+    ].join('\n')
+    expect(chainMultilineCommand(wrapped)).toBe(
+      [
+        'cloudflared tunnel run --token $(printf \'{"a":"5a6f2e7f32bb76e2412166042441fc9a"}\' | base64) && \\',
+        'echo done'
+      ].join('\n')
+    )
   })
 })
