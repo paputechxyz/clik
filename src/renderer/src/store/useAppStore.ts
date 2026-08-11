@@ -271,6 +271,7 @@ interface AppState {
   openShellTab: () => Promise<void>
   closeRun: (id: string) => Promise<void>
   setActiveRun: (id: string) => void
+  renameRun: (id: string, title: string) => void
   clearRun: (id: string) => void
   handlePtyEvent: (e: PtyEvent) => void
   flushOutput: () => void
@@ -533,6 +534,14 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setActiveRun(id) {
     set({ activeRunId: id })
+  },
+
+  renameRun(id, title) {
+    const trimmed = title.trim()
+    if (!trimmed) return
+    set((s) => ({
+      runs: s.runs.map((r) => (r.id === id ? { ...r, title: trimmed } : r))
+    }))
   },
 
   clearRun(id) {
