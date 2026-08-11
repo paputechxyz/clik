@@ -200,6 +200,90 @@ export function shellSplit(input: string): string[] {
   return out
 }
 
+// xterm.js can leave a hard `\n` at a soft line-wrap boundary when a long
+// terminal line is later read back via getSelection() — its `isWrapped` row
+// flag is known to desync after a resize/reflow or a shell line-editor redraw
+// (xtermjs/xterm.js#443, #1882). A `\n` a real submitted shell line couldn't
+// have contained is one that lands inside a still-open quote or substitution,
+// since the shell would still be waiting for it to close; that's an
+// unambiguous signal the break is a wrap artifact, so drop it there. A `\n`
+// at the top level is left alone — it may be a genuine multi-line paste.
+export function collapseWrappedNewlines(input: string): string {
+  let out = ''
+  let quote: '"' | "'" | null = null
+  let escaped = false
+  const stack: string[] = []
+
+  for (let i = 0; i < input.length; i++) {
+    const c = input[i]
+    const next = input[i + 1] ?? ''
+
+    if (escaped) {
+      out += c
+      escaped = false
+      continue
+    }
+    if (c === '\\') {
+      out += c
+      escaped = true
+      continue
+    }
+
+    if (quote) {
+      if (c === quote) quote = null
+      else if (c === '\n') continue
+      out += c
+      continue
+    }
+
+    if (stack.length === 0 && (c === '"' || c === "'")) {
+      quote = c
+      out += c
+      continue
+    }
+
+    if (c === '$' && next === '(') {
+      out += '$('
+      stack.push(')')
+      i++
+      continue
+    }
+    if (c === '$' && next === '{') {
+      out += '${'
+      stack.push('}')
+      i++
+      continue
+    }
+    if (c === '(') {
+      out += '('
+      stack.push(')')
+      continue
+    }
+    if (c === '{') {
+      out += '{'
+      stack.push('}')
+      continue
+    }
+    if (c === '`') {
+      if (stack.length > 0 && stack[stack.length - 1] === '`') stack.pop()
+      else stack.push('`')
+      out += c
+      continue
+    }
+
+    if (stack.length > 0) {
+      if (c === '\n') continue
+      const top = stack[stack.length - 1]
+      if (c === top) stack.pop()
+      out += c
+      continue
+    }
+
+    out += c
+  }
+  return out
+}
+
 // Stable signature for a flag+positional configuration. Used to detect whether
 // the current editor state exactly matches a saved snapshot (drives the Save
 // button's "Saved" state and prevents duplicate saves). Keys are sorted so the

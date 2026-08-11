@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { buildArgv, commandPreview, commandPreviewTokens, shellQuote, shellSplit } from '../buildArgv'
+import {
+  buildArgv,
+  collapseWrappedNewlines,
+  commandPreview,
+  commandPreviewTokens,
+  shellQuote,
+  shellSplit
+} from '../buildArgv'
 import type { Flag } from '../../../../shared/types'
 
 const f = (over: Partial<Flag> & { name: string; type: Flag['type'] }): Flag => ({
@@ -133,5 +140,32 @@ describe('shellQuote', () => {
 
   it('quotes an empty token as two single quotes', () => {
     expect(shellQuote([''])).toBe("''")
+  })
+})
+
+describe('collapseWrappedNewlines', () => {
+  it('drops a newline stuck inside a single-quoted token by a terminal wrap', () => {
+    const wrapped =
+      'cloudflared tunnel run --token $(printf \'{"a":"5a6f2e7f32bb76e2412166042441fc\n9a","t":"x"}\' | base64)'
+    expect(collapseWrappedNewlines(wrapped)).toBe(
+      'cloudflared tunnel run --token $(printf \'{"a":"5a6f2e7f32bb76e2412166042441fc9a","t":"x"}\' | base64)'
+    )
+  })
+
+  it('drops a newline stuck inside a $(...) substitution', () => {
+    expect(collapseWrappedNewlines('$(echo\nfoo)')).toBe('$(echofoo)')
+  })
+
+  it('drops a newline stuck inside double quotes', () => {
+    expect(collapseWrappedNewlines('echo "foo\nbar"')).toBe('echo "foobar"')
+  })
+
+  it('leaves a top-level newline alone (genuine multi-line paste)', () => {
+    expect(collapseWrappedNewlines('echo foo\necho bar')).toBe('echo foo\necho bar')
+  })
+
+  it('is a no-op for text with no newlines', () => {
+    const cmd = 'cloudflared tunnel run --token $(printf \'{"a":"b"}\' | base64)'
+    expect(collapseWrappedNewlines(cmd)).toBe(cmd)
   })
 })

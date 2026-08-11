@@ -11,7 +11,14 @@ import type {
   ExportResult,
   ImportResult
 } from '../../../shared/types'
-import { buildArgv, commandPreview, configSignature, shellQuote, shellSplit } from '../lib/buildArgv'
+import {
+  buildArgv,
+  collapseWrappedNewlines,
+  commandPreview,
+  configSignature,
+  shellQuote,
+  shellSplit
+} from '../lib/buildArgv'
 import { parseCommandTokens } from '../lib/parseCommand'
 
 export type { SavedCommandItem, HistoryItem, Folder }
@@ -596,7 +603,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   addRawCommand(command) {
-    const trimmed = command.trim()
+    const trimmed = collapseWrappedNewlines(command).trim()
     if (trimmed === '') return
     const item: SavedCommandItem = {
       id: uid(),
