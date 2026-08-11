@@ -625,6 +625,10 @@ button { font-family: var(--font-ui); color: inherit; }
 }
 .run-title { font-size: var(--text-base); color: var(--fg-muted); font-family: var(--font-mono); }
 .run-tab.active .run-title { color: var(--fg); }
+.run-title-input {
+  background: var(--bg); color: var(--fg); border: 1px solid var(--accent); border-radius: var(--radius-xs);
+  padding: 0 2px; outline: none;
+}
 .tab-close {
   background: transparent; border: none; color: var(--fg-faint); cursor: default;
   width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center;

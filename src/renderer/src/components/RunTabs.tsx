@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import type { Run } from '../store/useAppStore'
 import { useLayoutStore } from '../store/useLayoutStore'
@@ -23,10 +23,12 @@ export function RunTabs({ onCollapse }: RunTabsProps): JSX.Element {
   const setActiveRun = useAppStore((s) => s.setActiveRun)
   const closeRun = useAppStore((s) => s.closeRun)
   const openShellTab = useAppStore((s) => s.openShellTab)
+  const renameRun = useAppStore((s) => s.renameRun)
   const outputExpanded = useLayoutStore((s) => s.outputExpanded)
   const toggleOutputExpanded = useLayoutStore((s) => s.toggleOutputExpanded)
 
   const [tabMenu, setTabMenu] = useState<TabMenuState | null>(null)
+  const [renamingId, setRenamingId] = useState<string | null>(null)
 
   const active = runs.find((r) => r.id === activeRunId) ?? null
 
@@ -62,7 +64,26 @@ export function RunTabs({ onCollapse }: RunTabsProps): JSX.Element {
               }}
             >
               <span className={`status-dot status-${r.status}`} />
-              <span className="run-title">{r.title}</span>
+              {renamingId === r.id ? (
+                <RunTitleInput
+                  title={r.title}
+                  onCommit={(title) => {
+                    renameRun(r.id, title)
+                    setRenamingId(null)
+                  }}
+                  onCancel={() => setRenamingId(null)}
+                />
+              ) : (
+                <span
+                  className="run-title"
+                  onDoubleClick={(e) => {
+                    e.stopPropagation()
+                    setRenamingId(r.id)
+                  }}
+                >
+                  {r.title}
+                </span>
+              )}
               <button
                 className="tab-close"
                 title="Close"
@@ -101,6 +122,7 @@ export function RunTabs({ onCollapse }: RunTabsProps): JSX.Element {
           runs={runs}
           onClose={() => setTabMenu(null)}
           closeRun={closeRun}
+          onRename={(id) => setRenamingId(id)}
         />
       ) : null}
     </section>
@@ -112,9 +134,10 @@ interface TabContextMenuProps {
   runs: Run[]
   onClose: () => void
   closeRun: (id: string) => Promise<void>
+  onRename: (id: string) => void
 }
 
-function TabContextMenu({ menu, runs, onClose, closeRun }: TabContextMenuProps): JSX.Element {
+function TabContextMenu({ menu, runs, onClose, closeRun, onRename }: TabContextMenuProps): JSX.Element {
   const idx = runs.findIndex((r) => r.id === menu.runId)
   const hasOthers = runs.length > 1
   const hasLeft = idx > 0
@@ -125,6 +148,10 @@ function TabContextMenu({ menu, runs, onClose, closeRun }: TabContextMenuProps):
   }
 
   const items: ContextMenuItem[] = [
+    {
+      label: 'Rename',
+      onClick: () => onRename(menu.runId)
+    },
     {
       label: 'Close Other Tabs',
       disabled: !hasOthers,
@@ -150,5 +177,42 @@ function RunPane({ run }: { run: Run }): JSX.Element {
     <div className="run-pane">
       <TerminalView run={run} />
     </div>
+  )
+}
+
+interface RunTitleInputProps {
+  title: string
+  onCommit: (title: string) => void
+  onCancel: () => void
+}
+
+function RunTitleInput({ title, onCommit, onCancel }: RunTitleInputProps): JSX.Element {
+  const [value, setValue] = useState(title)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    inputRef.current?.select()
+  }, [])
+
+  return (
+    <input
+      ref={inputRef}
+      className="run-title run-title-input"
+      value={value}
+      style={{ width: `${Math.max(value.length, 4)}ch` }}
+      autoFocus
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={() => onCommit(value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          onCommit(value)
+        } else if (e.key === 'Escape') {
+          e.preventDefault()
+          onCancel()
+        }
+      }}
+    />
   )
 }
