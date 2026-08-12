@@ -13,11 +13,11 @@ import type {
 } from '../../../shared/types'
 import {
   buildArgv,
-  chainMultilineCommand,
   commandPreview,
   configSignature,
   shellQuote,
-  shellSplit
+  shellSplit,
+  toInjectableCommand
 } from '../lib/buildArgv'
 import { parseCommandTokens } from '../lib/parseCommand'
 
@@ -612,7 +612,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   addRawCommand(command) {
-    const trimmed = chainMultilineCommand(command)
+    const trimmed = toInjectableCommand(command)
     if (trimmed === '') return
     const item: SavedCommandItem = {
       id: uid(),
@@ -673,7 +673,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       target = get().runs[get().runs.length - 1]
     }
     if (!target) return
-    const cmd = item.rawCommand ?? item.preview
+    const cmd = toInjectableCommand(item.rawCommand ?? item.preview)
     window.clik.pty.input(target.id, cmd)
     set({ activeRunId: target.id })
     // Move focus off the inject button and into the terminal so the next
@@ -695,7 +695,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       target = get().runs[get().runs.length - 1]
     }
     if (!target) return
-    const cmd = item.rawCommand ?? item.preview
+    const cmd = toInjectableCommand(item.rawCommand ?? item.preview)
     window.clik.pty.input(target.id, cmd)
     set({ activeRunId: target.id })
     requestAnimationFrame(() => {

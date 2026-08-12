@@ -301,10 +301,12 @@ const TRAILING_CONTINUATION_RE = /(&&|\|\||\||\\)\s*$/
 // sequence of commands the user ran one Enter at a time — injecting it
 // verbatim just resubmits them the same way, one line at a time, instead of
 // as one run. Chain independent-looking lines into a single `&&`-joined
-// command (kept readable with backslash continuations) so re-injecting it
-// runs the whole sequence in one submission, stopping early if a step fails.
-// A line with its own top-level `;` (e.g. `set -a; source x; set +a`) is
-// wrapped in `{ ...; }` so it stays one unit in the chain.
+// command on one line (no backslash-newline continuations: those get typed
+// into the pty as real Enters, which just makes the shell print a PS2
+// continuation prompt per line) so re-injecting it runs the whole sequence in
+// one submission, stopping early if a step fails. A line with its own
+// top-level `;` (e.g. `set -a; source x; set +a`) is wrapped in `{ ...; }` so
+// it stays one unit in the chain.
 export function chainMultilineCommand(input: string): string {
   const collapsed = collapseWrappedNewlines(input).trim()
   const trimmedLines = collapsed.split('\n').map((l) => l.trim())
@@ -314,7 +316,47 @@ export function chainMultilineCommand(input: string): string {
     return collapsed
   }
   const units = lines.map((l) => (hasTopLevelSemicolon(l) ? `{ ${l.endsWith(';') ? l : `${l};`} }` : l))
-  return units.join(' && \\\n')
+  return units.join(' && ')
+}
+
+// A line ending in one of these is unfinished shell — the next line continues it.
+const TRAILING_OPERATOR_RE = /(&&|\|\|)$|(^|[^|])\|$/
+
+// Folds continuation line breaks — a trailing `\`, or a line left open by a
+// trailing `&&`/`||`/`|` — into single spaces, so the text becomes one physical
+// line that means exactly the same thing to the shell.
+function foldShellContinuations(input: string): string {
+  const collapsed = collapseWrappedNewlines(input)
+  const protectedAt = computeShellProtection(collapsed)
+  const skipIndent = (from: number): number => {
+    let j = from
+    while (j + 1 < collapsed.length && (collapsed[j + 1] === ' ' || collapsed[j + 1] === '\t')) j++
+    return j
+  }
+  let out = ''
+  for (let i = 0; i < collapsed.length; i++) {
+    const c = collapsed[i]
+    const backslashBreak = c === '\\' && collapsed[i + 1] === '\n' && !protectedAt[i]
+    const operatorBreak = c === '\n' && !protectedAt[i] && TRAILING_OPERATOR_RE.test(out.trimEnd())
+    if (backslashBreak || operatorBreak) {
+      i = skipIndent(backslashBreak ? i + 1 : i)
+      out = `${out.replace(/[ \t]+$/, '')} `
+      continue
+    }
+    out += c
+  }
+  return out
+}
+
+// What actually gets typed into the pty. The injected text arrives as literal
+// keystrokes, so every newline in it acts as an Enter: a `\`- or `&&`-continued
+// line makes the shell echo a PS2 continuation prompt (zsh's `cmdand>`) per
+// break, which runs correctly but looks broken. Flatten those breaks first,
+// then chain any remaining independent lines. This runs at inject time as well
+// as at save time because items saved by earlier versions still hold the
+// multi-line `&& \` form.
+export function toInjectableCommand(input: string): string {
+  return chainMultilineCommand(foldShellContinuations(input))
 }
 
 // Stable signature for a flag+positional configuration. Used to detect whether

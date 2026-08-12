@@ -6,7 +6,8 @@ import {
   commandPreview,
   commandPreviewTokens,
   shellQuote,
-  shellSplit
+  shellSplit,
+  toInjectableCommand
 } from '../buildArgv'
 import type { Flag } from '../../../../shared/types'
 
@@ -181,11 +182,11 @@ describe('chainMultilineCommand', () => {
     ].join('\n')
     expect(chainMultilineCommand(pasted)).toBe(
       [
-        'export PATH="$HOME/Library/Python/3.9/bin:$PATH" && \\',
-        'cd /Users/patrickpu/Documents/workspace.nosync/workspaces/ruby-test-lab/nue-ucc && \\',
-        '{ set -a; source api/credit_threshold_alert/.env.local; set +a; } && \\',
+        'export PATH="$HOME/Library/Python/3.9/bin:$PATH"',
+        'cd /Users/patrickpu/Documents/workspace.nosync/workspaces/ruby-test-lab/nue-ucc',
+        '{ set -a; source api/credit_threshold_alert/.env.local; set +a; }',
         'python3 -m pytest api/credit_threshold_alert/test_runner.py -v -s'
-      ].join('\n')
+      ].join(' && ')
     )
   })
 
@@ -203,16 +204,61 @@ describe('chainMultilineCommand', () => {
     expect(chainMultilineCommand(already)).toBe(already)
   })
 
+  it('leaves a `\\`-continued paste alone (toInjectableCommand folds it instead)', () => {
+    const already = ['foo && \\', 'bar'].join('\n')
+    expect(chainMultilineCommand(already)).toBe(already)
+  })
+
   it('still collapses a wrap-artifact newline stuck inside a quote before chaining', () => {
     const wrapped = [
       'cloudflared tunnel run --token $(printf \'{"a":"5a6f2e7f32bb76e2412166042441fc\n9a"}\' | base64)',
       'echo done'
     ].join('\n')
     expect(chainMultilineCommand(wrapped)).toBe(
-      [
-        'cloudflared tunnel run --token $(printf \'{"a":"5a6f2e7f32bb76e2412166042441fc9a"}\' | base64) && \\',
-        'echo done'
-      ].join('\n')
+      'cloudflared tunnel run --token $(printf \'{"a":"5a6f2e7f32bb76e2412166042441fc9a"}\' | base64) && echo done'
     )
+  })
+})
+
+describe('toInjectableCommand', () => {
+  const oneLine =
+    'export PATH="$HOME/Library/Python/3.9/bin:$PATH" && ' +
+    'cd /Users/patrickpu/Documents/workspace.nosync/workspaces/ruby-test-lab/nue-ucc && ' +
+    '{ set -a; source api/credit_threshold_alert/.env.local; set +a; } && ' +
+    'python3 -m pytest api/credit_threshold_alert/test_runner.py -v -s'
+
+  it('folds a legacy `&& \\`-per-line saved command into one line (no PS2 prompts)', () => {
+    const legacy = [
+      'export PATH="$HOME/Library/Python/3.9/bin:$PATH" && \\',
+      'cd /Users/patrickpu/Documents/workspace.nosync/workspaces/ruby-test-lab/nue-ucc && \\',
+      '{ set -a; source api/credit_threshold_alert/.env.local; set +a; } && \\',
+      'python3 -m pytest api/credit_threshold_alert/test_runner.py -v -s'
+    ].join('\n')
+    expect(toInjectableCommand(legacy)).toBe(oneLine)
+  })
+
+  it('chains a plain multi-line paste the same way', () => {
+    const pasted = [
+      'export PATH="$HOME/Library/Python/3.9/bin:$PATH"',
+      'cd /Users/patrickpu/Documents/workspace.nosync/workspaces/ruby-test-lab/nue-ucc',
+      'set -a; source api/credit_threshold_alert/.env.local; set +a',
+      'python3 -m pytest api/credit_threshold_alert/test_runner.py -v -s'
+    ].join('\n')
+    expect(toInjectableCommand(pasted)).toBe(oneLine)
+  })
+
+  it('folds a break left open by a trailing && or |', () => {
+    expect(toInjectableCommand('foo &&\nbar')).toBe('foo && bar')
+    expect(toInjectableCommand('ps aux |\n  grep node')).toBe('ps aux | grep node')
+  })
+
+  it('is idempotent — re-injecting an already-folded command is unchanged', () => {
+    expect(toInjectableCommand(oneLine)).toBe(oneLine)
+  })
+
+  it('leaves a single-line command and an if/fi block untouched', () => {
+    expect(toInjectableCommand('echo hi')).toBe('echo hi')
+    const script = ['if [ -f foo ]; then', '  echo yes', 'fi'].join('\n')
+    expect(toInjectableCommand(script)).toBe(script)
   })
 })
