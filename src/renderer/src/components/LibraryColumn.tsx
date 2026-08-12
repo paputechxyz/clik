@@ -8,10 +8,12 @@ import {
   ChevronsDownIcon,
   ChevronsUpIcon,
   ChevronUpIcon,
+  CloseIcon,
   FolderIcon,
   InjectIcon,
   PencilIcon,
   PlusIcon,
+  SearchIcon,
   TrashIcon
 } from './icons'
 import { Resizer } from './Resizer'
@@ -108,6 +110,7 @@ export function LibraryColumn(): JSX.Element {
   const [confirmDelete, setConfirmDelete] = useState<ConfirmDelete | null>(null)
   const [addingRaw, setAddingRaw] = useState(false)
   const [rawDraft, setRawDraft] = useState('')
+  const [filterQuery, setFilterQuery] = useState('')
 
   const hostRef = useRef<HTMLDivElement>(null)
   const [hostHeight, setHostHeight] = useState(0)
@@ -171,6 +174,24 @@ export function LibraryColumn(): JSX.Element {
   const reorderFolders = useAppStore((s) => s.reorderFolders)
 
   const rootItems = saved.filter((it) => (it.folderId ?? null) === null)
+
+  // ---- filter (match against saved command name or its rendered CLI) ----
+  const normalizedFilter = filterQuery.trim().toLowerCase()
+  const matchesFilter = (it: SavedCommandItem): boolean =>
+    normalizedFilter === '' ||
+    it.name.toLowerCase().includes(normalizedFilter) ||
+    it.preview.toLowerCase().includes(normalizedFilter)
+
+  const filteredRootItems = rootItems.filter(matchesFilter)
+  const folderResults = folders.map((f) => {
+    const commands = saved.filter((it) => it.folderId === f.id)
+    return { folder: f, commands: normalizedFilter === '' ? commands : commands.filter(matchesFilter) }
+  })
+  const isFiltering = normalizedFilter !== ''
+  const visibleFolderResults = isFiltering
+    ? folderResults.filter((r) => r.commands.length > 0)
+    : folderResults
+  const hasNoMatches = isFiltering && filteredRootItems.length === 0 && visibleFolderResults.length === 0
 
   // ---- multi-select ------------------------------------------------------
   // Cmd/Ctrl-click toggles a row, Shift-click selects a range over the rows as
@@ -490,61 +511,82 @@ export function LibraryColumn(): JSX.Element {
             {saved.length === 0 && folders.length === 0 ? (
               <div className="lib-empty">Saved commands appear here. Use the Save button next to Run.</div>
             ) : (
-              <ul className="lib-list" onDragOver={onListDragOver} onDrop={onListDrop}>
-                {addingRaw && (
-                  <li className="lib-item editing">
-                    <RawCommandInput
-                      value={rawDraft}
-                      onChange={setRawDraft}
-                      onCommit={() => {
-                        addRawCommand(rawDraft)
-                        setAddingRaw(false)
-                        setRawDraft('')
-                      }}
-                      onCancel={() => { setAddingRaw(false); setRawDraft('') }}
-                    />
-                  </li>
+              <>
+                <div className="lib-filter">
+                  <SearchIcon className="lib-filter-icon" />
+                  <input
+                    className="lib-filter-input"
+                    type="text"
+                    placeholder="Filter saved commands…"
+                    value={filterQuery}
+                    onChange={(e) => setFilterQuery(e.target.value)}
+                  />
+                  {filterQuery !== '' && (
+                    <button className="lib-filter-clear" title="Clear filter" onClick={() => setFilterQuery('')}>
+                      <CloseIcon />
+                    </button>
+                  )}
+                </div>
+                {hasNoMatches && !addingRaw ? (
+                  <div className="lib-empty">No saved commands match &ldquo;{filterQuery}&rdquo;.</div>
+                ) : (
+                  <ul className="lib-list" onDragOver={onListDragOver} onDrop={onListDrop}>
+                    {addingRaw && (
+                      <li className="lib-item editing">
+                        <RawCommandInput
+                          value={rawDraft}
+                          onChange={setRawDraft}
+                          onCommit={() => {
+                            addRawCommand(rawDraft)
+                            setAddingRaw(false)
+                            setRawDraft('')
+                          }}
+                          onCancel={() => { setAddingRaw(false); setRawDraft('') }}
+                        />
+                      </li>
+                    )}
+                    {filteredRootItems.map((it) => (
+                      <SavedCommandRow
+                        key={it.id}
+                        item={it}
+                        indent={0}
+                        editing={editing}
+                        draft={draft}
+                        setDraft={setDraft}
+                        beginRename={beginRename}
+                        commitRename={commitRename}
+                        cancelRename={cancelRename}
+                        onRowClick={onRowClick}
+                        selectedIds={selectedSet}
+                        onInject={injectCommand}
+                        onRemove={removeSaved}
+                        {...dnd}
+                      />
+                    ))}
+                    {visibleFolderResults.map(({ folder: f, commands }) => (
+                      <FolderGroup
+                        key={f.id}
+                        folder={f}
+                        commands={commands}
+                        collapsed={isFiltering ? false : !!folderCollapse[f.id]}
+                        onToggle={toggleFolder}
+                        editing={editing}
+                        draft={draft}
+                        setDraft={setDraft}
+                        beginRename={beginRename}
+                        commitRename={commitRename}
+                        cancelRename={cancelRename}
+                        onRowClick={onRowClick}
+                        selectedIds={selectedSet}
+                        onInject={injectCommand}
+                        onRemove={removeSaved}
+                        onDelete={onDeleteFolder}
+                        {...dnd}
+                      />
+                    ))}
+                  </ul>
                 )}
-                {rootItems.map((it) => (
-                  <SavedCommandRow
-                    key={it.id}
-                    item={it}
-                    indent={0}
-                    editing={editing}
-                    draft={draft}
-                    setDraft={setDraft}
-                    beginRename={beginRename}
-                    commitRename={commitRename}
-                    cancelRename={cancelRename}
-                    onRowClick={onRowClick}
-                    selectedIds={selectedSet}
-                    onInject={injectCommand}
-                    onRemove={removeSaved}
-                    {...dnd}
-                  />
-                ))}
-                {folders.map((f) => (
-                  <FolderGroup
-                    key={f.id}
-                    folder={f}
-                    commands={saved.filter((it) => it.folderId === f.id)}
-                    collapsed={!!folderCollapse[f.id]}
-                    onToggle={toggleFolder}
-                    editing={editing}
-                    draft={draft}
-                    setDraft={setDraft}
-                    beginRename={beginRename}
-                    commitRename={commitRename}
-                    cancelRename={cancelRename}
-                    onRowClick={onRowClick}
-                    selectedIds={selectedSet}
-                    onInject={injectCommand}
-                    onRemove={removeSaved}
-                    onDelete={onDeleteFolder}
-                    {...dnd}
-                  />
-                ))}
-              </ul>
+              </>
             )}
           </div>
         )}

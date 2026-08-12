@@ -488,6 +488,24 @@ button { font-family: var(--font-ui); color: inherit; }
 }
 .lib-head-action:hover { background: var(--danger-weak); color: var(--danger-fg); }
 .lib-body { flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+.lib-filter {
+  display: flex; align-items: center; gap: var(--space-2); flex: 0 0 auto;
+  margin: var(--space-2) var(--space-2) 0; padding: 0 var(--space-2);
+  background: var(--inset); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--fg-faint);
+}
+.lib-filter-icon { flex: 0 0 auto; }
+.lib-filter-input {
+  flex: 1 1 auto; min-width: 0; background: transparent; border: none; outline: none;
+  color: var(--fg); font: inherit; font-size: var(--text-sm); padding: var(--space-1) 0;
+}
+.lib-filter-input::placeholder { color: var(--fg-faint); }
+.lib-filter-clear {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; padding: 0; background: transparent; border: none;
+  color: var(--fg-faint); border-radius: var(--radius-xs); cursor: default;
+}
+.lib-filter-clear:hover { background: var(--hover); color: var(--fg); }
 .lib-empty { padding: var(--space-4) var(--space-3); color: var(--fg-faint); font-size: var(--text-sm); line-height: 1.45; }
 .lib-list { list-style: none; margin: 0; padding: var(--space-2); overflow: auto; flex: 1 1 auto; min-height: 0; }
 .lib-item { display: flex; align-items: stretch; border-radius: var(--radius-sm); overflow: hidden; }
