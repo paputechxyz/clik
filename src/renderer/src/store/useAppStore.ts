@@ -20,6 +20,23 @@ import {
   toInjectableCommand
 } from '../lib/buildArgv'
 import { parseCommandTokens } from '../lib/parseCommand'
+import {
+  addRunToLeaf,
+  findLeaf,
+  findLeafOfRun,
+  leaves,
+  makeLayout,
+  makePaneId,
+  moveRunToLeaf,
+  moveRunToNewSplit,
+  removeRun,
+  resizeSplit,
+  setActiveInLeaf,
+  splitLeaf,
+  type Edge,
+  type PaneLayout
+} from '../lib/paneTree'
+import { focusTerminal } from '../lib/terminalSlots'
 
 export type { SavedCommandItem, HistoryItem, Folder }
 
@@ -41,6 +58,30 @@ export interface Run {
   status: RunStatus
   code: number | null
   startedAt: number
+}
+
+function buildShellRun(id: string, shellName: string): Run {
+  const name = shellName || 'shell'
+  return {
+    id,
+    title: name,
+    preview: `${name} (login shell)`,
+    mode: 'shell',
+    output: '',
+    status: 'running',
+    code: null,
+    startedAt: Date.now()
+  }
+}
+
+/**
+ * Make `runId` the active tab of its own pane and focus that pane. The single
+ * place `activeRunId` is derived from the tree — every caller writes both.
+ */
+function focusRunInLayout(layout: PaneLayout, runId: string): PaneLayout {
+  const leaf = findLeafOfRun(layout.root, runId)
+  if (!leaf) return layout
+  return { root: setActiveInLeaf(layout.root, leaf.id, runId), focusedPaneId: leaf.id }
 }
 
 const MAX_OUTPUT = 1_000_000
@@ -246,6 +287,13 @@ interface AppState {
   shellName: string
   runs: Run[]
   activeRunId: string | null
+  /**
+   * Split-pane layout for the terminal panel. `runs` stays the flat registry of
+   * terminals; the tree owns tab order, grouping, and which pane has focus.
+   * `activeRunId` is a cached derivation of the focused pane's active tab and is
+   * only ever written in the same set() as `paneLayout`. Not persisted.
+   */
+  paneLayout: PaneLayout
 
   // persisted session (Task 5)
   selections: Record<string, string[]>
@@ -268,9 +316,14 @@ interface AppState {
   setFlagValue: (name: string, value: unknown) => void
   setPositionalArgs: (v: string) => void
   runCommand: () => Promise<void>
-  openShellTab: () => Promise<void>
+  openShellTab: (paneId?: string) => Promise<void>
   closeRun: (id: string) => Promise<void>
   setActiveRun: (id: string) => void
+  splitPane: (paneId: string, edge: Edge) => Promise<void>
+  focusPane: (paneId: string) => void
+  moveRunToPane: (runId: string, paneId: string, index: number) => void
+  splitPaneWithRun: (paneId: string, edge: Edge, runId: string) => void
+  resizePaneSplit: (splitId: string, index: number, containerPx: number, deltaPx: number) => void
   renameRun: (id: string, title: string) => void
   clearRun: (id: string) => void
   handlePtyEvent: (e: PtyEvent) => void
@@ -315,6 +368,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   shellName: '',
   runs: [],
   activeRunId: null,
+  paneLayout: makeLayout(),
   selections: persisted?.selections ?? {},
   commands: persisted?.commands ?? {},
   saved: [],
@@ -479,6 +533,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     window.clik.pty.input(target.id, commandString + '\n')
     set({
       activeRunId: target.id,
+      paneLayout: focusRunInLayout(get().paneLayout, target.id),
       runs: get().runs.map((r) =>
         r.id === target!.id
           ? { ...r, mode: 'shell', preview, title: [tree.binaryName, ...selection].join(' ') }
@@ -504,36 +559,104 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
   },
 
-  async openShellTab() {
+  async openShellTab(paneId) {
     const id = await window.clik.pty.openShell()
-    const name = get().shellName || 'shell'
-    const run: Run = {
-      id,
-      title: name,
-      preview: `${name} (login shell)`,
-      mode: 'shell',
-      output: '',
-      status: 'running',
-      code: null,
-      startedAt: Date.now()
-    }
-    set((s) => ({ runs: [...s.runs, run], activeRunId: id }))
+    set((s) => {
+      const run = buildShellRun(id, s.shellName)
+      const wanted = paneId ?? s.paneLayout.focusedPaneId
+      const leafId = findLeaf(s.paneLayout.root, wanted) ? wanted : leaves(s.paneLayout.root)[0].id
+      return {
+        runs: [...s.runs, run],
+        activeRunId: id,
+        paneLayout: { root: addRunToLeaf(s.paneLayout.root, leafId, id), focusedPaneId: leafId }
+      }
+    })
+  },
+
+  async splitPane(paneId, edge) {
+    const id = await window.clik.pty.openShell()
+    const newPaneId = makePaneId()
+    set((s) => {
+      const root = splitLeaf(s.paneLayout.root, paneId, edge, id, newPaneId)
+      // splitLeaf declines an unknown pane; fall back to a plain tab there.
+      if (root === s.paneLayout.root) {
+        const leafId = s.paneLayout.focusedPaneId
+        return {
+          runs: [...s.runs, buildShellRun(id, s.shellName)],
+          activeRunId: id,
+          paneLayout: { root: addRunToLeaf(root, leafId, id), focusedPaneId: leafId }
+        }
+      }
+      return {
+        runs: [...s.runs, buildShellRun(id, s.shellName)],
+        activeRunId: id,
+        paneLayout: { root, focusedPaneId: newPaneId }
+      }
+    })
   },
 
   async closeRun(id) {
     outputBuffers.delete(id)
     const run = get().runs.find((r) => r.id === id)
     if (run && run.status === 'running') await window.clik.pty.kill(id)
-    const runs = get().runs.filter((r) => r.id !== id)
-    set({
-      runs,
-      activeRunId:
-        get().activeRunId === id ? (runs.length > 0 ? runs[runs.length - 1].id : null) : get().activeRunId
+    set((s) => {
+      const runs = s.runs.filter((r) => r.id !== id)
+      if (!findLeafOfRun(s.paneLayout.root, id)) {
+        // The layout never knew this run (store tests seed `runs` directly).
+        return {
+          runs,
+          activeRunId:
+            s.activeRunId === id ? (runs.length > 0 ? runs[runs.length - 1].id : null) : s.activeRunId
+        }
+      }
+      const root = removeRun(s.paneLayout.root, id)
+      const focusedPaneId = findLeaf(root, s.paneLayout.focusedPaneId)
+        ? s.paneLayout.focusedPaneId
+        : leaves(root)[0].id
+      return {
+        runs,
+        activeRunId: findLeaf(root, focusedPaneId)?.activeRunId ?? null,
+        paneLayout: { root, focusedPaneId }
+      }
     })
   },
 
   setActiveRun(id) {
-    set({ activeRunId: id })
+    set((s) => ({ activeRunId: id, paneLayout: focusRunInLayout(s.paneLayout, id) }))
+  },
+
+  focusPane(paneId) {
+    set((s) => {
+      const leaf = findLeaf(s.paneLayout.root, paneId)
+      if (!leaf || paneId === s.paneLayout.focusedPaneId) return {}
+      return {
+        activeRunId: leaf.activeRunId,
+        paneLayout: { ...s.paneLayout, focusedPaneId: paneId }
+      }
+    })
+  },
+
+  moveRunToPane(runId, paneId, index) {
+    set((s) => {
+      const root = moveRunToLeaf(s.paneLayout.root, runId, paneId, index)
+      if (root === s.paneLayout.root) return {}
+      return { activeRunId: runId, paneLayout: focusRunInLayout({ ...s.paneLayout, root }, runId) }
+    })
+  },
+
+  splitPaneWithRun(paneId, edge, runId) {
+    set((s) => {
+      const root = moveRunToNewSplit(s.paneLayout.root, paneId, edge, runId, makePaneId())
+      if (root === s.paneLayout.root) return {}
+      return { activeRunId: runId, paneLayout: focusRunInLayout({ ...s.paneLayout, root }, runId) }
+    })
+  },
+
+  resizePaneSplit(splitId, index, containerPx, deltaPx) {
+    set((s) => {
+      const root = resizeSplit(s.paneLayout.root, splitId, index, containerPx, deltaPx)
+      return root === s.paneLayout.root ? {} : { paneLayout: { ...s.paneLayout, root } }
+    })
   },
 
   renameRun(id, title) {
@@ -675,15 +798,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!target) return
     const cmd = toInjectableCommand(item.rawCommand ?? item.preview)
     window.clik.pty.input(target.id, cmd)
-    set({ activeRunId: target.id })
+    set({ activeRunId: target.id, paneLayout: focusRunInLayout(get().paneLayout, target.id) })
     // Move focus off the inject button and into the terminal so the next
     // keystroke (Enter to submit the injected line) goes to the PTY instead
     // of re-triggering the button. rAF lets a freshly-opened tab's terminal
-    // mount first; an already-active tab's terminal is already in the DOM.
-    requestAnimationFrame(() => {
-      const ta = document.querySelector<HTMLElement>('.term-host .xterm-helper-textarea')
-      ta?.focus()
-    })
+    // mount first. Address the terminal by run id — a DOM query would grab
+    // whichever pane happens to come first in document order.
+    requestAnimationFrame(() => focusTerminal(target!.id))
   },
 
   async injectHistory(item) {
@@ -697,11 +818,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!target) return
     const cmd = toInjectableCommand(item.rawCommand ?? item.preview)
     window.clik.pty.input(target.id, cmd)
-    set({ activeRunId: target.id })
-    requestAnimationFrame(() => {
-      const ta = document.querySelector<HTMLElement>('.term-host .xterm-helper-textarea')
-      ta?.focus()
-    })
+    set({ activeRunId: target.id, paneLayout: focusRunInLayout(get().paneLayout, target.id) })
+    requestAnimationFrame(() => focusTerminal(target!.id))
   },
 
   removeSaved(id) {

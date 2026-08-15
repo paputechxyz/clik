@@ -6,6 +6,7 @@ import { LibraryColumn } from './components/LibraryColumn'
 import { SettingsModal } from './components/SettingsModal'
 import { UpdateBanner } from './components/UpdateBanner'
 import { RunTabs } from './components/RunTabs'
+import { TerminalHostLayer } from './components/TerminalHostLayer'
 import { Resizer } from './components/Resizer'
 import { ptyDataBus } from './lib/pty-events'
 import { ChevronUpIcon, GearIcon } from './components/icons'
@@ -122,6 +123,9 @@ export function App(): JSX.Element {
 
   return (
     <div className="app">
+      {/* Terminals live here, portaled into per-run containers, so they survive
+          pane moves, tab switches, and collapsing the panel. */}
+      <TerminalHostLayer />
       <header className="titlebar">
         <div className="title">CLIk</div>
         <div className="toolbar">

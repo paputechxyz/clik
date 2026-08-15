@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import type { CommandTree, ClikApi, Folder, LibraryData, SavedCommandItem, HistoryItem } from '../../../../shared/types'
 import { useAppStore, isRunnable, type Run } from '../useAppStore'
+import { assertLayoutInvariants, findLeaf, leaves, makeLayout } from '../../lib/paneTree'
 
 function fakeTree(label: string): CommandTree {
   return {
@@ -673,5 +674,215 @@ describe('PTY data batching (handlePtyEvent)', () => {
     vi.advanceTimersByTime(100)
     // output was cleared and the buffered 'pending' chunk was discarded
     expect(useAppStore.getState().runs[0].output).toBe('')
+  })
+})
+
+describe('split panes', () => {
+  let shellSeq = 0
+
+  function api(): void {
+    installApi({
+      pty: {
+        openShell: vi.fn(async () => `run${++shellSeq}`),
+        kill: vi.fn(async () => undefined),
+        input: vi.fn(),
+        resize: vi.fn()
+      }
+    } as unknown as Partial<ClikApi>)
+  }
+
+  beforeEach(() => {
+    shellSeq = 0
+    api()
+    useAppStore.setState({ runs: [], activeRunId: null, shellName: 'zsh', paneLayout: makeLayout() })
+  })
+
+  function panes(): string[] {
+    return leaves(useAppStore.getState().paneLayout.root).map((l) => l.id)
+  }
+  function checkInvariants(): void {
+    const s = useAppStore.getState()
+    assertLayoutInvariants(s.runs.map((r) => r.id), s.paneLayout)
+  }
+
+  it('openShellTab appends to the focused pane and activates the new run', async () => {
+    const root = useAppStore.getState().paneLayout.focusedPaneId
+    await useAppStore.getState().openShellTab()
+    await useAppStore.getState().openShellTab()
+    const s = useAppStore.getState()
+    expect(s.runs.map((r) => r.id)).toEqual(['run1', 'run2'])
+    expect(s.activeRunId).toBe('run2')
+    expect(panes()).toEqual([root])
+    expect(findLeaf(s.paneLayout.root, root)!.runIds).toEqual(['run1', 'run2'])
+    checkInvariants()
+  })
+
+  it('openShellTab(paneId) targets that pane rather than the focused one', async () => {
+    await useAppStore.getState().openShellTab()
+    const first = useAppStore.getState().paneLayout.focusedPaneId
+    await useAppStore.getState().splitPane(first, 'right')
+    const second = useAppStore.getState().paneLayout.focusedPaneId
+    expect(second).not.toBe(first)
+
+    await useAppStore.getState().openShellTab(first)
+    const s = useAppStore.getState()
+    expect(findLeaf(s.paneLayout.root, first)!.runIds).toEqual(['run1', 'run3'])
+    expect(findLeaf(s.paneLayout.root, second)!.runIds).toEqual(['run2'])
+    expect(s.paneLayout.focusedPaneId).toBe(first)
+    checkInvariants()
+  })
+
+  it('splitPane opens a shell in a brand new pane and leaves the original tabs alone', async () => {
+    await useAppStore.getState().openShellTab()
+    await useAppStore.getState().openShellTab()
+    const first = useAppStore.getState().paneLayout.focusedPaneId
+
+    await useAppStore.getState().splitPane(first, 'right')
+    const s = useAppStore.getState()
+    const root = s.paneLayout.root
+    expect(root.kind).toBe('split')
+    expect(root.kind === 'split' && root.direction).toBe('row')
+    expect(findLeaf(root, first)!.runIds).toEqual(['run1', 'run2'])
+    const other = leaves(root).find((l) => l.id !== first)!
+    expect(other.runIds).toEqual(['run3'])
+    expect(s.paneLayout.focusedPaneId).toBe(other.id)
+    expect(s.activeRunId).toBe('run3')
+    checkInvariants()
+  })
+
+  it('splitPane down produces a column split', async () => {
+    await useAppStore.getState().openShellTab()
+    const first = useAppStore.getState().paneLayout.focusedPaneId
+    await useAppStore.getState().splitPane(first, 'bottom')
+    const root = useAppStore.getState().paneLayout.root
+    expect(root.kind === 'split' && root.direction).toBe('column')
+    checkInvariants()
+  })
+
+  it('splitPane on an unknown pane falls back to a plain tab in the focused pane', async () => {
+    await useAppStore.getState().openShellTab()
+    await useAppStore.getState().splitPane('nope', 'right')
+    const s = useAppStore.getState()
+    expect(s.paneLayout.root.kind).toBe('leaf')
+    expect(leaves(s.paneLayout.root)[0].runIds).toEqual(['run1', 'run2'])
+    checkInvariants()
+  })
+
+  it('closeRun collapses an emptied pane and re-points activeRunId', async () => {
+    await useAppStore.getState().openShellTab()
+    const first = useAppStore.getState().paneLayout.focusedPaneId
+    await useAppStore.getState().splitPane(first, 'right')
+
+    await useAppStore.getState().closeRun('run2')
+    const s = useAppStore.getState()
+    expect(s.paneLayout.root.kind).toBe('leaf')
+    expect(s.paneLayout.focusedPaneId).toBe(first)
+    expect(s.activeRunId).toBe('run1')
+    expect(s.runs.map((r) => r.id)).toEqual(['run1'])
+    checkInvariants()
+  })
+
+  it('closing the last tab leaves an empty pane, not a broken tree', async () => {
+    await useAppStore.getState().openShellTab()
+    await useAppStore.getState().closeRun('run1')
+    const s = useAppStore.getState()
+    expect(s.runs).toEqual([])
+    expect(s.activeRunId).toBeNull()
+    expect(leaves(s.paneLayout.root)).toHaveLength(1)
+    expect(leaves(s.paneLayout.root)[0].runIds).toEqual([])
+    checkInvariants()
+  })
+
+  it('closeRun keeps the legacy fallback when the layout does not know the run', async () => {
+    const runs: Run[] = ['a', 'b'].map((id) => ({
+      id,
+      title: id,
+      preview: '',
+      mode: 'shell',
+      output: '',
+      status: 'exited',
+      code: 0,
+      startedAt: 0
+    }))
+    useAppStore.setState({ runs, activeRunId: 'a', paneLayout: makeLayout() })
+    await useAppStore.getState().closeRun('a')
+    expect(useAppStore.getState().activeRunId).toBe('b')
+  })
+
+  it('focusPane moves activeRunId to that pane visible tab', async () => {
+    await useAppStore.getState().openShellTab()
+    const first = useAppStore.getState().paneLayout.focusedPaneId
+    await useAppStore.getState().splitPane(first, 'right')
+    expect(useAppStore.getState().activeRunId).toBe('run2')
+
+    useAppStore.getState().focusPane(first)
+    expect(useAppStore.getState().activeRunId).toBe('run1')
+    expect(useAppStore.getState().paneLayout.focusedPaneId).toBe(first)
+  })
+
+  it('setActiveRun on a run in another pane focuses that pane too', async () => {
+    await useAppStore.getState().openShellTab()
+    const first = useAppStore.getState().paneLayout.focusedPaneId
+    await useAppStore.getState().splitPane(first, 'right')
+
+    useAppStore.getState().setActiveRun('run1')
+    expect(useAppStore.getState().paneLayout.focusedPaneId).toBe(first)
+    expect(useAppStore.getState().activeRunId).toBe('run1')
+  })
+
+  it('moveRunToPane regroups a tab without touching the runs registry', async () => {
+    await useAppStore.getState().openShellTab()
+    await useAppStore.getState().openShellTab()
+    const first = useAppStore.getState().paneLayout.focusedPaneId
+    await useAppStore.getState().splitPane(first, 'right')
+    const second = useAppStore.getState().paneLayout.focusedPaneId
+
+    useAppStore.getState().moveRunToPane('run1', second, 0)
+    const s = useAppStore.getState()
+    expect(s.runs.map((r) => r.id)).toEqual(['run1', 'run2', 'run3'])
+    expect(findLeaf(s.paneLayout.root, first)!.runIds).toEqual(['run2'])
+    expect(findLeaf(s.paneLayout.root, second)!.runIds).toEqual(['run1', 'run3'])
+    expect(s.activeRunId).toBe('run1')
+    expect(s.paneLayout.focusedPaneId).toBe(second)
+    checkInvariants()
+  })
+
+  it('splitPaneWithRun tears a tab out into a new pane', async () => {
+    await useAppStore.getState().openShellTab()
+    await useAppStore.getState().openShellTab()
+    const first = useAppStore.getState().paneLayout.focusedPaneId
+
+    useAppStore.getState().splitPaneWithRun(first, 'bottom', 'run1')
+    const s = useAppStore.getState()
+    expect(s.paneLayout.root.kind === 'split' && s.paneLayout.root.direction).toBe('column')
+    expect(findLeaf(s.paneLayout.root, first)!.runIds).toEqual(['run2'])
+    const other = leaves(s.paneLayout.root).find((l) => l.id !== first)!
+    expect(other.runIds).toEqual(['run1'])
+    expect(s.activeRunId).toBe('run1')
+    checkInvariants()
+  })
+
+  it('dragging a pane only tab onto its own pane changes nothing', async () => {
+    await useAppStore.getState().openShellTab()
+    const first = useAppStore.getState().paneLayout.focusedPaneId
+    await useAppStore.getState().splitPane(first, 'right')
+    const before = useAppStore.getState().paneLayout
+
+    useAppStore.getState().splitPaneWithRun(first, 'left', 'run1')
+    useAppStore.getState().moveRunToPane('run1', first, 0)
+    expect(useAppStore.getState().paneLayout).toBe(before)
+  })
+
+  it('resizePaneSplit shifts the weights of a live split', async () => {
+    await useAppStore.getState().openShellTab()
+    const first = useAppStore.getState().paneLayout.focusedPaneId
+    await useAppStore.getState().splitPane(first, 'right')
+    const root = useAppStore.getState().paneLayout.root
+    expect(root.kind).toBe('split')
+
+    useAppStore.getState().resizePaneSplit(root.id, 0, 1000, 100)
+    const after = useAppStore.getState().paneLayout.root
+    expect(after.kind === 'split' && after.weights[0]).toBeCloseTo(0.6)
+    expect(after.kind === 'split' && after.weights[1]).toBeCloseTo(0.4)
   })
 })

@@ -700,7 +700,61 @@ button { font-family: var(--font-ui); color: inherit; }
 .context-menu-item:active:not(:disabled) { background: var(--hover-strong); }
 .context-menu-item:disabled { color: var(--fg-faint); opacity: 0.5; cursor: default; }
 
-.run-pane { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.run-pane { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
+
+/* ---- Split panes ------------------------------------------------------ */
+/* Sizes are flex weights, so only ratios matter; a pane's minimum is enforced
+   in paneTree (MIN_PANE_PX), not by a CSS min-width that would break shrink. */
+.pane-split { display: flex; flex: 1 1 0; min-width: 0; min-height: 0; }
+.pane-split.row { flex-direction: row; }
+.pane-split.column { flex-direction: column; }
+.pane-slot { display: flex; min-width: 0; min-height: 0; overflow: hidden; }
+.pane-leaf {
+  display: flex; flex-direction: column; flex: 1 1 0;
+  min-width: 0; min-height: 0; background: var(--bg);
+}
+.pane-leaf.focused .run-tabs-bar { background: color-mix(in oklch, var(--panel-2) 72%, var(--accent) 7%); }
+.pane-body { position: relative; flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; }
+
+/* Only present during a tab drag: it sits above the terminal so the pane, not
+   xterm, receives the drag events (the terminal is portaled in, so React
+   synthetic events from it never reach the pane component). */
+.pane-drop-shield { position: absolute; inset: 0; z-index: 20; }
+.pane-drop-hint {
+  position: absolute; z-index: 21; pointer-events: none;
+  background: color-mix(in oklch, var(--accent) 16%, transparent);
+  outline: 2px solid var(--accent); outline-offset: -2px;
+  border-radius: var(--radius-sm);
+  transition: inset var(--dur-fast) var(--ease-out),
+              width var(--dur-fast) var(--ease-out),
+              height var(--dur-fast) var(--ease-out);
+}
+.pane-drop-hint.center { inset: 0; }
+.pane-drop-hint.left   { top: 0; bottom: 0; left: 0;  width: 50%; }
+.pane-drop-hint.right  { top: 0; bottom: 0; right: 0; width: 50%; }
+.pane-drop-hint.top    { left: 0; right: 0; top: 0;    height: 50%; }
+.pane-drop-hint.bottom { left: 0; right: 0; bottom: 0; height: 50%; }
+.output.dragging .term-host { pointer-events: none; }
+
+/* tab drag indicators — .lib-item.drop-* rotated to the horizontal axis */
+.run-tab[draggable="true"] { cursor: grab; }
+.run-tab[draggable="true"]:active { cursor: grabbing; }
+.run-tab.dragging { opacity: 0.4; }
+.run-tab.drop-before { box-shadow: inset 2px 0 0 0 var(--accent); }
+.run-tab.drop-after { box-shadow: inset -2px 0 0 0 var(--accent); }
+.run-tabs.drop-end { box-shadow: inset -2px 0 0 0 var(--accent); }
+
+/* narrow panes: titles ellipsize instead of widening the strip */
+.run-tab { min-width: 0; }
+.run-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 16ch; }
+
+/* stable per-run terminal container, moved between panes with appendChild */
+.term-slot { display: flex; flex: 1 1 auto; min-height: 0; min-width: 0; }
+.term-park-root {
+  position: fixed; left: -99999px; top: 0; width: 800px; height: 600px;
+  visibility: hidden; pointer-events: none;
+}
+
 .run-meta {
   display: flex; align-items: center; gap: var(--space-3);
   padding: var(--space-2) var(--space-4); border-bottom: 1px solid var(--border);

@@ -5,6 +5,7 @@ import '@xterm/xterm/css/xterm.css'
 import type { Run } from '../store/useAppStore'
 import { useAppStore } from '../store/useAppStore'
 import { ptyDataBus } from '../lib/pty-events'
+import { registerHooks } from '../lib/terminalSlots'
 import { translateEditKey, computeCursorDelta } from '../lib/term-keys'
 import { ChevronUpIcon, ChevronDownIcon, CloseIcon } from './icons'
 import { ContextMenu } from './ContextMenu'
@@ -366,7 +367,9 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
       return true
     })
 
-    term.focus()
+    // Terminals are all mounted at once (TerminalHostLayer), so focusing
+    // unconditionally would let whichever mounted last steal the caret.
+    if (useAppStore.getState().activeRunId === run.id) term.focus()
 
     // Click-to-move the shell cursor (opencode-style). A plain left-click (no
     // drag) on the prompt line sends the matching number of arrow-key bytes to
@@ -455,8 +458,19 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
       term.write(data)
     })
 
+    // Let the pane that adopts this terminal refit and repaint it. A re-parent
+    // that happens to preserve the box size would not trip the ResizeObserver.
+    const unregisterSlot = registerHooks(run.id, {
+      focus: () => term.focus(),
+      onAttach: () => {
+        refit()
+        term.refresh(0, term.rows - 1)
+      }
+    })
+
     return () => {
       alive = false
+      unregisterSlot()
       unsubBus()
       cancelAnimationFrame(raf)
       dpr.removeEventListener('change', refit)
