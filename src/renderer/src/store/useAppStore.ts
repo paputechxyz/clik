@@ -8,6 +8,7 @@ import type {
   SavedCommandItem,
   HistoryItem,
   Folder,
+  SavedLayout,
   ExportResult,
   ImportResult
 } from '../../../shared/types'
@@ -36,9 +37,10 @@ import {
   type Edge,
   type PaneLayout
 } from '../lib/paneTree'
+import { collectSavedTerminals, rebuildPaneTree, serializePaneNode } from '../lib/layoutSnapshot'
 import { focusTerminal } from '../lib/terminalSlots'
 
-export type { SavedCommandItem, HistoryItem, Folder }
+export type { SavedCommandItem, HistoryItem, Folder, SavedLayout }
 
 export type RunStatus = 'running' | 'exited'
 export type RunMode = 'shell' | 'command'
@@ -155,8 +157,13 @@ function savePersisted(s: PersistedSession): void {
 // Persist the library (saved + history) to the main process, which writes it
 // to userData/library.json so it survives restarts (unlike renderer localStorage,
 // which is scoped per-origin and lost between dev/packaged builds).
-function persistLibrary(saved: SavedCommandItem[], history: HistoryItem[], folders: Folder[]): void {
-  void window.clik.library.save({ saved, history, folders }).catch(() => {
+function persistLibrary(
+  saved: SavedCommandItem[],
+  history: HistoryItem[],
+  folders: Folder[],
+  layouts: SavedLayout[] = useAppStore.getState().layouts
+): void {
+  void window.clik.library.save({ saved, history, folders, layouts }).catch(() => {
     // ignore — best-effort; main process is the source of truth on next launch
   })
 }
@@ -303,6 +310,7 @@ interface AppState {
   saved: SavedCommandItem[]
   history: HistoryItem[]
   folders: Folder[]
+  layouts: SavedLayout[]
 
   loadEntries: () => Promise<void>
   loadLibrary: () => Promise<void>
@@ -338,6 +346,10 @@ interface AppState {
   importSaved: () => Promise<ImportResult>
   clearHistory: () => void
   renameSaved: (id: string, name: string) => void
+  saveLayout: (name?: string) => Promise<void>
+  renameLayout: (id: string, name: string) => void
+  removeLayout: (id: string) => void
+  restoreLayout: (id: string) => Promise<void>
   addFolder: (name: string) => void
   renameFolder: (id: string, name: string) => void
   removeFolder: (id: string) => void
@@ -374,6 +386,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   saved: [],
   history: [],
   folders: [],
+  layouts: [],
 
   async loadEntries() {
     const entries = await window.clik.registry.list()
@@ -402,7 +415,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({
         saved: Array.isArray(data.saved) ? data.saved : [],
         history: Array.isArray(data.history) ? data.history : [],
-        folders: Array.isArray(data.folders) ? data.folders : []
+        folders: Array.isArray(data.folders) ? data.folders : [],
+        layouts: Array.isArray(data.layouts) ? data.layouts : []
       })
       relinkOrphans(get, set)
     } catch {
@@ -881,6 +895,91 @@ export const useAppStore = create<AppState>((set, get) => ({
       persistLibrary(saved, s.history, s.folders)
       return { saved }
     })
+  },
+
+  async saveLayout(name) {
+    const { paneLayout, runs } = get()
+    const runIds = leaves(paneLayout.root).flatMap((l) => l.runIds)
+    // Ask main for each terminal's last-reported cwd (OSC 7). Best-effort: a
+    // terminal that never printed a prompt (or already exited) resolves to null
+    // and restores at the home directory.
+    const cwdList = await Promise.all(
+      runIds.map((id) => window.clik.pty.cwd(id).catch(() => null))
+    )
+    const cwdById = new Map(runIds.map((id, i) => [id, cwdList[i]]))
+    const titleById = new Map(runs.map((r) => [r.id, r.title]))
+    const root = serializePaneNode(paneLayout.root, {
+      title: (id) => titleById.get(id) ?? 'shell',
+      cwd: (id) => cwdById.get(id) ?? null
+    })
+    set((s) => {
+      // Default name "Layout N", disambiguated against existing names (mirrors
+      // saveCurrentCommand's dedup so every entry is identifiable).
+      const taken = new Set(s.layouts.map((l) => l.name))
+      let finalName = (name ?? '').trim()
+      if (finalName === '') {
+        let n = s.layouts.length + 1
+        while (taken.has(`Layout ${n}`)) n++
+        finalName = `Layout ${n}`
+      } else if (taken.has(finalName)) {
+        let n = 2
+        while (taken.has(`${finalName} (${n})`)) n++
+        finalName = `${finalName} (${n})`
+      }
+      const layout: SavedLayout = { id: uid(), name: finalName, createdAt: Date.now(), root }
+      const layouts = [...s.layouts, layout]
+      persistLibrary(s.saved, s.history, s.folders, layouts)
+      return { layouts }
+    })
+  },
+
+  renameLayout(id, name) {
+    set((s) => {
+      const trimmed = name.trim()
+      if (trimmed === '') return {}
+      const layouts = s.layouts.map((l) => (l.id === id ? { ...l, name: trimmed } : l))
+      persistLibrary(s.saved, s.history, s.folders, layouts)
+      return { layouts }
+    })
+  },
+
+  removeLayout(id) {
+    set((s) => {
+      const layouts = s.layouts.filter((l) => l.id !== id)
+      persistLibrary(s.saved, s.history, s.folders, layouts)
+      return { layouts }
+    })
+  },
+
+  async restoreLayout(id) {
+    const layout = get().layouts.find((l) => l.id === id)
+    if (!layout) return
+    const terminals = collectSavedTerminals(layout.root)
+    if (terminals.length === 0) return
+
+    // Spawn every shell first, each in its saved cwd, so a failure leaves the
+    // current workspace untouched. openShell reuses the shell-env/TERM_PROGRAM
+    // setup, so restored terminals keep reporting cwd for the next save.
+    const newIds = await Promise.all(
+      terminals.map((t) => window.clik.pty.openShell(t.cwd ?? undefined))
+    )
+
+    // Now tear down the previous terminals (replace semantics).
+    const previous = get().runs
+    for (const r of previous) {
+      outputBuffers.delete(r.id)
+      if (r.status === 'running') void window.clik.pty.kill(r.id)
+    }
+
+    const shellName = get().shellName
+    const newRuns: Run[] = newIds.map((rid, i) => {
+      const base = buildShellRun(rid, shellName)
+      const title = terminals[i].title.trim()
+      return title ? { ...base, title } : base
+    })
+    const paneLayout = rebuildPaneTree(layout.root, newIds)
+    const focusedLeaf = findLeaf(paneLayout.root, paneLayout.focusedPaneId)
+    set({ runs: newRuns, paneLayout, activeRunId: focusedLeaf?.activeRunId ?? newIds[0] ?? null })
   },
 
   addFolder(name) {

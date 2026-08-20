@@ -214,7 +214,7 @@ export function registerIpc(getWin: () => BrowserWindow | null): IpcCleanup {
   })
 
   ipcMain.handle('pty:open', (_e, req: PtyOpenRequest) => ptys.open(req))
-  ipcMain.handle('pty:openShell', () => {
+  ipcMain.handle('pty:openShell', (_e, requestedCwd?: string) => {
     if (process.platform === 'win32') {
       return ptys.open({
         file: process.env.COMSPEC || 'cmd.exe',
@@ -223,7 +223,9 @@ export function registerIpc(getWin: () => BrowserWindow | null): IpcCleanup {
         env: {}
       })
     }
-    const remembered = ptys.getLastCwd()
+    // A restored layout passes the terminal's saved cwd; a fresh tab/split passes
+    // nothing and inherits the last-used directory (getLastCwd).
+    const remembered = requestedCwd ?? ptys.getLastCwd()
     let cwd = os.homedir()
     if (remembered) {
       try {
@@ -251,6 +253,7 @@ export function registerIpc(getWin: () => BrowserWindow | null): IpcCleanup {
     ptys.resize(id, cols, rows)
   })
   ipcMain.handle('pty:kill', (_e, id: string) => ptys.kill(id))
+  ipcMain.handle('pty:cwd', (_e, id: string) => ptys.getCwd(id))
 
   return { stopAll: () => ptys.dispose() }
 }

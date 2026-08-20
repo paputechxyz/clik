@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import type { LibraryData } from '../shared/types'
 import { normalizeLibrary } from './library-migrate'
 
-const EMPTY: LibraryData = { saved: [], history: [], folders: [] }
+const EMPTY: LibraryData = { saved: [], history: [], folders: [], layouts: [] }
 
 export class Library {
   private file: string

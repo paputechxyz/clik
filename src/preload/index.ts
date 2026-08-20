@@ -37,7 +37,8 @@ const api: ClikApi = {
   },
   pty: {
     open: (req) => ipcRenderer.invoke('pty:open', req),
-    openShell: () => ipcRenderer.invoke('pty:openShell'),
+    openShell: (cwd) => ipcRenderer.invoke('pty:openShell', cwd),
+    cwd: (id) => ipcRenderer.invoke('pty:cwd', id),
     input: (id, data) => {
       ipcRenderer.send('pty:input', id, data)
     },

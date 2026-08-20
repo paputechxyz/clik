@@ -149,7 +149,7 @@ describe('library folders, move/reorder, migration behavior', () => {
 
   it('addFolder appends and persists, renameFolder renames', () => {
     const libSave = vi.fn<(d: LibraryData) => Promise<void>>(async () => undefined)
-    installApi({ library: { get: async () => ({ saved: [], history: [], folders: [] }), save: libSave } })
+    installApi({ library: { get: async () => ({ saved: [], history: [], folders: [], layouts: [] }), save: libSave } })
 
     useAppStore.getState().addFolder('Deploy')
     expect(useAppStore.getState().folders).toEqual([{ id: expect.any(String), name: 'Deploy' }])
@@ -282,7 +282,7 @@ describe('library folders, move/reorder, migration behavior', () => {
     const libSave = vi.fn<(d: LibraryData) => Promise<void>>(async () => undefined)
     installApi({
       registry: { list: async () => [], add: async (e) => ({ id: '1', ...e }), update: async (e) => e, remove: async () => undefined, reorder: async () => undefined },
-      library: { get: async () => ({ saved: [], history: [], folders: [] }), save: libSave }
+      library: { get: async () => ({ saved: [], history: [], folders: [], layouts: [] }), save: libSave }
     })
     const item = saved('s1')
     const hist: HistoryItem = { ...item, id: 'h1' }
@@ -300,7 +300,7 @@ describe('library folders, move/reorder, migration behavior', () => {
 
   it('addTerminalHistory records a typed command with rawCommand, newest first, and dedups consecutive repeats', () => {
     const libSave = vi.fn<(d: LibraryData) => Promise<void>>(async () => undefined)
-    installApi({ library: { get: async () => ({ saved: [], history: [], folders: [] }), save: libSave } })
+    installApi({ library: { get: async () => ({ saved: [], history: [], folders: [], layouts: [] }), save: libSave } })
 
     useAppStore.getState().addTerminalHistory('git status')
     const s1 = useAppStore.getState()
@@ -332,7 +332,7 @@ describe('library folders, move/reorder, migration behavior', () => {
         remove: async () => undefined,
         reorder: async () => undefined
       },
-      library: { get: async () => ({ saved: [], history: [], folders: [] }), save: libSave }
+      library: { get: async () => ({ saved: [], history: [], folders: [], layouts: [] }), save: libSave }
     })
     const item = saved('s1') // entryId 'e1', entryName 'x', binaryName 'x'
     const hist: HistoryItem = { ...item, id: 'h1' }
@@ -358,7 +358,7 @@ describe('library folders, move/reorder, migration behavior', () => {
         remove: async () => undefined,
         reorder: async () => undefined
       },
-      library: { get: async () => ({ saved: [], history: [], folders: [] }), save: async () => undefined }
+      library: { get: async () => ({ saved: [], history: [], folders: [], layouts: [] }), save: async () => undefined }
     })
     // saved command references the OLD (removed) entry id, same CLI by name
     useAppStore.setState({ entries: [], saved: [saved('s1')] })
@@ -380,7 +380,7 @@ describe('library folders, move/reorder, migration behavior', () => {
         remove: async () => undefined,
         reorder: async () => undefined
       },
-      library: { get: async () => ({ saved: [], history: [], folders: [] }), save: async () => undefined }
+      library: { get: async () => ({ saved: [], history: [], folders: [], layouts: [] }), save: async () => undefined }
     })
     const live = saved('live') // entryId 'e1' still exists
     useAppStore.setState({
@@ -511,7 +511,7 @@ describe('runnable group commands (group with its own flags)', () => {
 
   it('saveCurrentCommand saves a runnable group-with-flags command', () => {
     const libSave = vi.fn<(d: LibraryData) => Promise<void>>(async () => undefined)
-    installApi({ library: { get: async () => ({ saved: [], history: [], folders: [] }), save: libSave } })
+    installApi({ library: { get: async () => ({ saved: [], history: [], folders: [], layouts: [] }), save: libSave } })
     useAppStore.setState({ selection: ['tag'], flagValues: { list: true } })
     useAppStore.getState().saveCurrentCommand()
     const s = useAppStore.getState()
@@ -522,7 +522,7 @@ describe('runnable group commands (group with its own flags)', () => {
 
   it('saveCurrentCommand is a no-op for a pure container group', () => {
     const libSave = vi.fn<(d: LibraryData) => Promise<void>>(async () => undefined)
-    installApi({ library: { get: async () => ({ saved: [], history: [], folders: [] }), save: libSave } })
+    installApi({ library: { get: async () => ({ saved: [], history: [], folders: [], layouts: [] }), save: libSave } })
     useAppStore.setState({ selection: ['container'] })
     useAppStore.getState().saveCurrentCommand()
     expect(useAppStore.getState().saved).toHaveLength(0)

@@ -155,10 +155,37 @@ export interface HistoryItem {
   rawCommand?: string
 }
 
+// A saved terminal split arrangement. Mirrors the renderer's PaneLayout tree
+// (see paneTree.ts) but replaces ephemeral run/pty ids with what a restore needs:
+// each terminal's tab title and the working directory it was on when saved.
+export type SavedPaneDirection = 'row' | 'column'
+
+export interface SavedLayoutTerminal {
+  title: string
+  cwd: string | null
+}
+
+export type SavedPaneNode =
+  | { kind: 'leaf'; terminals: SavedLayoutTerminal[]; activeIndex: number }
+  | {
+      kind: 'split'
+      direction: SavedPaneDirection
+      children: SavedPaneNode[]
+      weights: number[]
+    }
+
+export interface SavedLayout {
+  id: string
+  name: string
+  createdAt: number
+  root: SavedPaneNode
+}
+
 export interface LibraryData {
   saved: SavedCommandItem[]
   history: HistoryItem[]
   folders: Folder[]
+  layouts: SavedLayout[]
 }
 
 // Payload written to / read from a saved-commands export file. Only saved
@@ -223,7 +250,8 @@ export interface ClikApi {
   }
   pty: {
     open: (req: PtyOpenRequest) => Promise<string>
-    openShell: () => Promise<string>
+    openShell: (cwd?: string) => Promise<string>
+    cwd: (id: string) => Promise<string | null>
     input: (id: string, data: string) => void
     resize: (id: string, cols: number, rows: number) => void
     kill: (id: string) => Promise<boolean>

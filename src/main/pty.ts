@@ -11,6 +11,9 @@ export class PtyManager {
   private osc7Buffers = new Map<string, string>()
   // Most recent working directory reported by any pty via OSC 7.
   private lastCwd: string | null = null
+  // Per-pty working directory, so a saved layout can reopen each terminal in the
+  // directory it was actually on (unlike lastCwd, which is a single global).
+  private cwds = new Map<string, string>()
   private disposed = false
 
   constructor(
@@ -35,7 +38,11 @@ export class PtyManager {
       lastEnd = re.lastIndex
       try {
         const u = new URL('file://' + m[1])
-        if (u.pathname) this.lastCwd = decodeURIComponent(u.pathname)
+        if (u.pathname) {
+          const dir = decodeURIComponent(u.pathname)
+          this.lastCwd = dir
+          this.cwds.set(id, dir)
+        }
       } catch {
         // malformed payload; ignore
       }
@@ -56,6 +63,10 @@ export class PtyManager {
     return this.lastCwd
   }
 
+  getCwd(id: string): string | null {
+    return this.cwds.get(id) ?? null
+  }
+
   open(req: PtyOpenRequest): string {
     const id = randomUUID()
     const p = pty.spawn(req.file, req.args ?? [], {
@@ -72,6 +83,7 @@ export class PtyManager {
     p.onExit(({ exitCode, signal }) => {
       this.handles.delete(id)
       this.osc7Buffers.delete(id)
+      this.cwds.delete(id)
       const payload: PtyExitPayload = { code: exitCode, signal }
       this.safeEmit(id, 'exit', payload)
     })

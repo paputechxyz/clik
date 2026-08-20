@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from 'react'
-import type { Folder, SavedCommandItem } from '../../../shared/types'
+import type { Folder, SavedCommandItem, SavedPaneNode } from '../../../shared/types'
 import { useAppStore } from '../store/useAppStore'
 import {
   ChevronDownIcon,
@@ -24,8 +24,10 @@ interface LibraryLayout {
   libraryCollapsed: boolean
   savedCollapsed: boolean
   historyCollapsed: boolean
+  layoutsCollapsed: boolean
   savedWeight: number
   historyWeight: number
+  layoutsWeight: number
   width: number
   folderCollapse: Record<string, boolean>
 }
@@ -39,8 +41,10 @@ function loadLayout(): LibraryLayout {
     libraryCollapsed: false,
     savedCollapsed: false,
     historyCollapsed: false,
+    layoutsCollapsed: false,
     savedWeight: 1,
     historyWeight: 1,
+    layoutsWeight: 1,
     width: DEFAULT_WIDTH,
     folderCollapse: {}
   }
@@ -70,7 +74,7 @@ function saveLayout(s: LibraryLayout): void {
 
 const MIN_WEIGHT = 0.0001
 
-type EditTarget = { kind: 'command' | 'folder'; id: string }
+type EditTarget = { kind: 'command' | 'folder' | 'layout'; id: string }
 type ConfirmDelete = { folderId: string; name: string; count: number }
 type DropHint =
   | { type: 'command'; id: string; edge: 'before' | 'after' }
@@ -100,8 +104,10 @@ export function LibraryColumn(): JSX.Element {
   const [libraryCollapsed, setLibraryCollapsed] = useState(initial.current.libraryCollapsed)
   const [savedCollapsed, setSavedCollapsed] = useState(initial.current.savedCollapsed)
   const [historyCollapsed, setHistoryCollapsed] = useState(initial.current.historyCollapsed)
+  const [layoutsCollapsed, setLayoutsCollapsed] = useState(initial.current.layoutsCollapsed)
   const [savedWeight, setSavedWeight] = useState(initial.current.savedWeight)
   const [historyWeight, setHistoryWeight] = useState(initial.current.historyWeight)
+  const [layoutsWeight, setLayoutsWeight] = useState(initial.current.layoutsWeight)
   const [width, setWidth] = useState(initial.current.width)
   const [folderCollapse, setFolderCollapse] = useState<Record<string, boolean>>(initial.current.folderCollapse)
 
@@ -130,8 +136,10 @@ export function LibraryColumn(): JSX.Element {
       libraryCollapsed,
       savedCollapsed,
       historyCollapsed,
+      layoutsCollapsed,
       savedWeight,
       historyWeight,
+      layoutsWeight,
       width,
       folderCollapse,
       ...next
@@ -160,6 +168,11 @@ export function LibraryColumn(): JSX.Element {
   const saved = useAppStore((s) => s.saved)
   const history = useAppStore((s) => s.history)
   const folders = useAppStore((s) => s.folders)
+  const layouts = useAppStore((s) => s.layouts)
+  const saveLayoutSnapshot = useAppStore((s) => s.saveLayout)
+  const renameLayout = useAppStore((s) => s.renameLayout)
+  const removeLayout = useAppStore((s) => s.removeLayout)
+  const restoreLayout = useAppStore((s) => s.restoreLayout)
   const removeSaved = useAppStore((s) => s.removeSaved)
   const clearHistory = useAppStore((s) => s.clearHistory)
   const loadCommand = useAppStore((s) => s.loadCommand)
@@ -260,6 +273,7 @@ export function LibraryColumn(): JSX.Element {
     const name = draft.trim()
     if (name !== '') {
       if (target.kind === 'command') renameSaved(target.id, name)
+      else if (target.kind === 'layout') renameLayout(target.id, name)
       else renameFolder(target.id, name)
     }
     setEditing(null)
@@ -421,7 +435,8 @@ export function LibraryColumn(): JSX.Element {
     endDrag
   }
 
-  const onDragResizer = (deltaPx: number): void => {
+  // Resize a pair of adjacent weighted sections (three sections → two resizers).
+  const onDragSavedHistory = (deltaPx: number): void => {
     if (hostHeight <= 0) return
     const total = savedWeight + historyWeight || 1
     const deltaWeight = (deltaPx / hostHeight) * total
@@ -430,6 +445,17 @@ export function LibraryColumn(): JSX.Element {
     setSavedWeight(top)
     setHistoryWeight(bottom)
     persist({ savedWeight: top, historyWeight: bottom })
+  }
+
+  const onDragHistoryLayouts = (deltaPx: number): void => {
+    if (hostHeight <= 0) return
+    const total = historyWeight + layoutsWeight || 1
+    const deltaWeight = (deltaPx / hostHeight) * total
+    const top = Math.max(MIN_WEIGHT, historyWeight + deltaWeight)
+    const bottom = Math.max(MIN_WEIGHT, layoutsWeight - deltaWeight)
+    setHistoryWeight(top)
+    setLayoutsWeight(bottom)
+    persist({ historyWeight: top, layoutsWeight: bottom })
   }
 
   if (libraryCollapsed) {
@@ -596,7 +622,7 @@ export function LibraryColumn(): JSX.Element {
         <Resizer
           orientation="horizontal"
           title="Drag to resize"
-          onDrag={onDragResizer}
+          onDrag={onDragSavedHistory}
         />
       )}
 
@@ -642,6 +668,103 @@ export function LibraryColumn(): JSX.Element {
                     </button>
                   </li>
                 ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+
+      {!historyCollapsed && !layoutsCollapsed && (
+        <Resizer
+          orientation="horizontal"
+          title="Drag to resize"
+          onDrag={onDragHistoryLayouts}
+        />
+      )}
+
+      <div className={`lib-panel${layoutsCollapsed ? ' collapsed' : ''}`} style={{ flex: layoutsCollapsed ? '0 0 26px' : `${layoutsWeight} 1 0`, minHeight: layoutsCollapsed ? 0 : 76 }}>
+        <div className="lib-head">
+          <button
+            className="lib-head-toggle"
+            title={layoutsCollapsed ? 'Expand Layouts' : 'Collapse Layouts'}
+            onClick={() => {
+              const next = !layoutsCollapsed
+              setLayoutsCollapsed(next)
+              persist({ layoutsCollapsed: next })
+            }}
+          >
+            {layoutsCollapsed ? <ChevronDownIcon /> : <ChevronUpIcon />}
+            <span className="lib-head-title">Layouts</span>
+            <span className="lib-head-count">{layouts.length}</span>
+          </button>
+          {!layoutsCollapsed && (
+            <span className="lib-head-actions">
+              <button
+                className="icon-btn small"
+                title="Save current terminal layout"
+                onClick={() => void saveLayoutSnapshot()}
+              >
+                <PlusIcon />
+              </button>
+            </span>
+          )}
+        </div>
+        {!layoutsCollapsed && (
+          <div className="lib-body">
+            {layouts.length === 0 ? (
+              <div className="lib-empty">Save your terminal split arrangement to restore it later.</div>
+            ) : (
+              <ul className="lib-list">
+                {layouts.map((l) => {
+                  const isEditing = editing?.kind === 'layout' && editing.id === l.id
+                  return (
+                    <li key={l.id} className={`lib-item${isEditing ? ' editing' : ''}`} title={l.name}>
+                      <div className="lib-item-main">
+                        {isEditing ? (
+                          <RenameInput
+                            value={draft}
+                            onChange={setDraft}
+                            onCommit={commitRename}
+                            onCancel={cancelRename}
+                          />
+                        ) : (
+                          <>
+                            <span className="lib-item-name">{l.name}</span>
+                            <span className="lib-item-preview">{countTerminals(l.root)} terminals</span>
+                          </>
+                        )}
+                      </div>
+                      {!isEditing && (
+                        <span className="lib-item-tools">
+                          <button
+                            className="lib-item-x"
+                            title="Restore layout"
+                            onClick={(e) => {
+                              e.currentTarget.blur()
+                              void restoreLayout(l.id)
+                            }}
+                          >
+                            <InjectIcon />
+                          </button>
+                          <button
+                            className="lib-item-x"
+                            title="Rename"
+                            onClick={() => beginRename({ kind: 'layout', id: l.id }, l.name)}
+                          >
+                            <PencilIcon />
+                          </button>
+                          <button
+                            className="lib-item-x"
+                            title="Delete layout"
+                            onClick={() => removeLayout(l.id)}
+                          >
+                            <TrashIcon />
+                          </button>
+                        </span>
+                      )}
+                    </li>
+                  )
+                })}
               </ul>
             )}
           </div>
@@ -979,4 +1102,11 @@ function formatTime(ts: number): string {
   const d = new Date(ts)
   const pad = (n: number): string => n.toString().padStart(2, '0')
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
+
+// Total terminals in a saved layout tree — shown as the row's subtitle.
+function countTerminals(node: SavedPaneNode): number {
+  return node.kind === 'leaf'
+    ? node.terminals.length
+    : node.children.reduce((sum, c) => sum + countTerminals(c), 0)
 }

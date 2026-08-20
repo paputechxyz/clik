@@ -24,6 +24,7 @@ describe('library migration (R13)', () => {
     const oldData = { saved: [saved('s1'), saved('s2')], history: [] } as unknown as Partial<LibraryData>
     const out = normalizeLibrary(oldData)
     expect(out.folders).toEqual([])
+    expect(out.layouts).toEqual([])
     expect(out.saved).toHaveLength(2)
     expect(out.saved[0].folderId).toBeNull()
     expect(out.saved[1].folderId).toBeNull()
