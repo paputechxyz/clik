@@ -180,6 +180,9 @@ function fitTerminal(term: Terminal, host: HTMLElement): void {
 export function TerminalView({ run }: { run: Run }): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
+  // Configurable scrollback (lines). Read live so changing it in Settings prunes
+  // every mounted terminal's buffer — see the effect that writes term.options.
+  const scrollback = useAppStore((s) => s.scrollback)
   const writtenRef = useRef(0)
   // True once anything has been written to xterm — the initial scrollback
   // restore OR live-streamed PTY data. Live data bypasses run.output/writtenRef
@@ -247,7 +250,8 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
         brightCyan: '#a4ffff',
         brightWhite: '#ffffff'
       },
-      scrollback: 5000,
+      // Initial value; kept in sync with the store by the effect below.
+      scrollback: useAppStore.getState().scrollback,
       convertEol: true,
       // Defaults to true on macOS, which would replace the user's highlight with
       // the word under the pointer just as our selection context menu opens.
@@ -488,6 +492,14 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
     // mount once for this tab
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Apply scrollback changes to the live terminal. Lowering it makes xterm trim
+  // the buffer to the new line count immediately, freeing the pruned lines'
+  // memory; raising it just allows more retained going forward.
+  useEffect(() => {
+    const term = termRef.current
+    if (term && ready) term.options.scrollback = scrollback
+  }, [scrollback, ready])
 
   // Live PTY data arrives via ptyDataBus (subscribed in the mount effect) and
   // is written directly to xterm. run.output is only used for the initial

@@ -89,6 +89,14 @@ function focusRunInLayout(layout: PaneLayout, runId: string): PaneLayout {
 const MAX_OUTPUT = 1_000_000
 const MAX_HISTORY = 200
 
+// Terminal scrollback, in lines. Matches VS Code's `terminal.integrated.scrollback`
+// default (1000). Lines beyond this are pruned from every terminal's buffer so
+// long-running output does not grow memory without bound. User-configurable in
+// Settings; clamped to a sane range on write.
+const DEFAULT_SCROLLBACK = 1000
+export const MIN_SCROLLBACK = 100
+export const MAX_SCROLLBACK = 100_000
+
 // PTY data is written to xterm directly via ptyDataBus (see TerminalView), so
 // run.output is only consumed on tab-switch remount + in-terminal search. We
 // batch the accumulation here: chunks land in outputBuffers and flush to the
@@ -130,6 +138,12 @@ interface PersistedSession {
   selectedEntryId: string | null
   selections: Record<string, string[]> // entryId -> command path
   commands: Record<string, SavedCommand> // `${entryId}::${path.join('/')}` -> values
+  scrollback: number // terminal scrollback limit, in lines
+}
+
+function clampScrollback(n: number): number {
+  if (!Number.isFinite(n)) return DEFAULT_SCROLLBACK
+  return Math.min(MAX_SCROLLBACK, Math.max(MIN_SCROLLBACK, Math.floor(n)))
 }
 
 function commandKey(entryId: string, selection: string[]): string {
@@ -305,6 +319,7 @@ interface AppState {
   // persisted session (Task 5)
   selections: Record<string, string[]>
   commands: Record<string, SavedCommand>
+  scrollback: number
 
   // library (saved + history)
   saved: SavedCommandItem[]
@@ -363,6 +378,7 @@ interface AppState {
     positional: string
   }) => Promise<void>
   importCommandString: (text: string) => Promise<void>
+  setScrollback: (lines: number) => void
 }
 
 const persisted = loadPersisted()
@@ -383,6 +399,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   paneLayout: makeLayout(),
   selections: persisted?.selections ?? {},
   commands: persisted?.commands ?? {},
+  scrollback: clampScrollback(persisted?.scrollback ?? DEFAULT_SCROLLBACK),
   saved: [],
   history: [],
   folders: [],
@@ -407,6 +424,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         ? entries[0].id
         : null
     if (targetId) await get().selectEntry(targetId)
+  },
+
+  setScrollback(lines) {
+    const scrollback = clampScrollback(lines)
+    set({ scrollback })
+    savePersisted(snapshot(get()))
   },
 
   async loadLibrary() {
@@ -1296,7 +1319,8 @@ function snapshot(s: AppState): PersistedSession {
   return {
     selectedEntryId: s.selectedEntryId,
     selections: s.selections,
-    commands: s.commands
+    commands: s.commands,
+    scrollback: s.scrollback
   }
 }
 

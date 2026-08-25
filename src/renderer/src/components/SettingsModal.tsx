@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CliEntry, ResolvedCommand, ShellEnvStatus, UpdateStatusEvent } from '../../../shared/types'
-import { useAppStore } from '../store/useAppStore'
+import { useAppStore, MIN_SCROLLBACK, MAX_SCROLLBACK } from '../store/useAppStore'
 
 const SHOW_SHELL_ENV = false
 const SHOW_DISCOVERED = false
@@ -11,6 +11,11 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
   const updateEntry = useAppStore((s) => s.updateEntry)
   const removeEntry = useAppStore((s) => s.removeEntry)
   const savedCount = useAppStore((s) => s.saved.length)
+  const scrollback = useAppStore((s) => s.scrollback)
+  const setScrollback = useAppStore((s) => s.setScrollback)
+  // Local text state so the field can be edited (and briefly empty) before the
+  // clamped value is committed to the store on blur / Enter.
+  const [scrollbackText, setScrollbackText] = useState(String(scrollback))
   const exportSaved = useAppStore((s) => s.exportSaved)
   const importSaved = useAppStore((s) => s.importSaved)
   const [ioBusy, setIoBusy] = useState(false)
@@ -183,6 +188,19 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
     }
   }
 
+  const commitScrollback = (): void => {
+    const n = parseInt(scrollbackText, 10)
+    // Empty / non-numeric input reverts to the current value; otherwise the
+    // store clamps to [MIN_SCROLLBACK, MAX_SCROLLBACK]. Reflect the committed
+    // value back into the field so the user sees exactly what was applied.
+    if (Number.isNaN(n)) {
+      setScrollbackText(String(scrollback))
+      return
+    }
+    setScrollback(n)
+    setScrollbackText(String(useAppStore.getState().scrollback))
+  }
+
   const isDownloaded = update.state === 'downloaded'
 
   return (
@@ -244,6 +262,37 @@ export function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element
                 >
                   Export
                 </button>
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset className="entry-fieldset">
+            <legend>Terminal</legend>
+            <div className="shell-env-row">
+              <div className="shell-env-text">
+                Scrollback limit
+                <div className="resolved-hint">
+                  Lines kept per terminal. Older lines are pruned to free memory.
+                </div>
+              </div>
+              <div className="entry-actions" style={{ marginTop: 0 }}>
+                <input
+                  type="number"
+                  className="flag-input"
+                  style={{ width: '7rem' }}
+                  min={MIN_SCROLLBACK}
+                  max={MAX_SCROLLBACK}
+                  step={100}
+                  value={scrollbackText}
+                  onChange={(e) => setScrollbackText(e.target.value)}
+                  onBlur={commitScrollback}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      commitScrollback()
+                    }
+                  }}
+                />
               </div>
             </div>
           </fieldset>
