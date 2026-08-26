@@ -334,6 +334,13 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
             let j = i + 2
             while (j < d.length && d.charCodeAt(j) < 0x40) j++
             i = Math.min(j + 1, d.length)
+          } else if (d[i + 1] === 'O') {
+            // SS3 (application cursor-key mode — e.g. some shells send "\x1bOA"
+            // for Up instead of the CSI "\x1b[A"). The final byte follows 'O'
+            // directly with no parameter bytes, so just consume the triplet —
+            // otherwise that trailing letter falls through to the printable
+            // branch below and leaks into the typed-line buffer.
+            i = Math.min(i + 3, d.length)
           } else if (i + 1 < d.length) {
             i += 2
           } else {
