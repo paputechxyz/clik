@@ -361,6 +361,7 @@ interface AppState {
   importSaved: () => Promise<ImportResult>
   clearHistory: () => void
   renameSaved: (id: string, name: string) => void
+  updateSavedScript: (id: string, name: string, script: string) => void
   saveLayout: (name?: string) => Promise<void>
   renameLayout: (id: string, name: string) => void
   removeLayout: (id: string) => void
@@ -915,6 +916,34 @@ export const useAppStore = create<AppState>((set, get) => ({
       const trimmed = name.trim()
       if (trimmed === '') return {}
       const saved = s.saved.map((it) => (it.id === id ? { ...it, name: trimmed } : it))
+      persistLibrary(saved, s.history, s.folders)
+      return { saved }
+    })
+  },
+
+  updateSavedScript(id, name, script) {
+    set((s) => {
+      const trimmedName = name.trim()
+      const trimmedScript = toInjectableCommand(script)
+      if (trimmedName === '' || trimmedScript === '') return {}
+      // Editing the script text untethers the item from its original CLI
+      // entry (flags/positional no longer apply), so it becomes a raw command.
+      const saved = s.saved.map((it) =>
+        it.id === id
+          ? {
+              ...it,
+              name: trimmedName,
+              preview: trimmedScript,
+              rawCommand: trimmedScript,
+              entryId: '',
+              entryName: '',
+              binaryName: '',
+              selection: [],
+              flags: {},
+              positional: ''
+            }
+          : it
+      )
       persistLibrary(saved, s.history, s.folders)
       return { saved }
     })

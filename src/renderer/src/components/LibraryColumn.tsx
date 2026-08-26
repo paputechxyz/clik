@@ -74,7 +74,7 @@ function saveLayout(s: LibraryLayout): void {
 
 const MIN_WEIGHT = 0.0001
 
-type EditTarget = { kind: 'command' | 'folder' | 'layout'; id: string }
+type EditTarget = { kind: 'folder' | 'layout'; id: string }
 type ConfirmDelete = { folderId: string; name: string; count: number }
 type DropHint =
   | { type: 'command'; id: string; edge: 'before' | 'after' }
@@ -113,6 +113,7 @@ export function LibraryColumn(): JSX.Element {
 
   const [editing, setEditing] = useState<EditTarget | null>(null)
   const [draft, setDraft] = useState('')
+  const [editingScript, setEditingScript] = useState<SavedCommandItem | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<ConfirmDelete | null>(null)
   const [addingRaw, setAddingRaw] = useState(false)
   const [rawDraft, setRawDraft] = useState('')
@@ -182,7 +183,7 @@ export function LibraryColumn(): JSX.Element {
   const injectCommand = useAppStore((s) => s.injectCommand)
   const renameFolder = useAppStore((s) => s.renameFolder)
   const removeFolder = useAppStore((s) => s.removeFolder)
-  const renameSaved = useAppStore((s) => s.renameSaved)
+  const updateSavedScript = useAppStore((s) => s.updateSavedScript)
   const moveCommands = useAppStore((s) => s.moveCommands)
   const reorderFolders = useAppStore((s) => s.reorderFolders)
 
@@ -272,8 +273,7 @@ export function LibraryColumn(): JSX.Element {
     if (!target) return
     const name = draft.trim()
     if (name !== '') {
-      if (target.kind === 'command') renameSaved(target.id, name)
-      else if (target.kind === 'layout') renameLayout(target.id, name)
+      if (target.kind === 'layout') renameLayout(target.id, name)
       else renameFolder(target.id, name)
     }
     setEditing(null)
@@ -586,6 +586,7 @@ export function LibraryColumn(): JSX.Element {
                         selectedIds={selectedSet}
                         onInject={injectCommand}
                         onRemove={removeSaved}
+                        onEditScript={setEditingScript}
                         {...dnd}
                       />
                     ))}
@@ -606,6 +607,7 @@ export function LibraryColumn(): JSX.Element {
                         selectedIds={selectedSet}
                         onInject={injectCommand}
                         onRemove={removeSaved}
+                        onEditScript={setEditingScript}
                         onDelete={onDeleteFolder}
                         {...dnd}
                       />
@@ -788,6 +790,17 @@ export function LibraryColumn(): JSX.Element {
           }}
         />
       )}
+
+      {editingScript !== null && (
+        <EditScriptModal
+          item={editingScript}
+          onCancel={() => setEditingScript(null)}
+          onSave={(name, script) => {
+            updateSavedScript(editingScript.id, name, script)
+            setEditingScript(null)
+          }}
+        />
+      )}
     </>
   )
 }
@@ -803,35 +816,30 @@ interface RowSharedProps {
   selectedIds: Set<string>
   onInject: (item: SavedCommandItem) => void
   onRemove: (id: string) => void
+  onEditScript: (item: SavedCommandItem) => void
 }
 
 function SavedCommandRow({
   item,
   indent,
-  editing,
-  draft,
-  setDraft,
-  beginRename,
-  commitRename,
-  cancelRename,
   onRowClick,
   selectedIds,
   onInject,
   onRemove,
+  onEditScript,
   onCommandDragStart,
   onCommandDragOver,
   onCommandDrop,
   endDrag,
   dropHint
 }: RowSharedProps & DndProps & { item: SavedCommandItem; indent: number }): JSX.Element {
-  const isEditing = editing?.kind === 'command' && editing.id === item.id
   const isSelected = selectedIds.has(item.id)
   const hint = dropHint?.type === 'command' && dropHint.id === item.id ? ` drop-${dropHint.edge}` : ''
   return (
     <li
-      className={`lib-item${isEditing ? ' editing' : ''}${isSelected ? ' selected' : ''}${hint}`}
+      className={`lib-item${isSelected ? ' selected' : ''}${hint}`}
       aria-selected={isSelected}
-      draggable={!isEditing}
+      draggable
       onDragStart={(e) => onCommandDragStart(e, item)}
       onDragEnd={endDrag}
       onDragOver={(e) => onCommandDragOver(e, item)}
@@ -840,39 +848,27 @@ function SavedCommandRow({
       style={indent ? { paddingLeft: `calc(var(--space-3) + ${indent * 12}px)` } : undefined}
     >
       <button className="lib-item-main" onClick={(e) => onRowClick(item, e)}>
-        {isEditing ? (
-          <RenameInput value={draft} onChange={setDraft} onCommit={commitRename} onCancel={cancelRename} />
-        ) : (
-          <>
-            <span className="lib-item-name">{item.name}</span>
-            <span className="lib-item-preview">{item.preview}</span>
-          </>
-        )}
+        <span className="lib-item-name">{item.name}</span>
+        <span className="lib-item-preview">{item.preview}</span>
       </button>
-      {!isEditing && (
-        <span className="lib-item-tools">
-          <button
-            className="lib-item-x"
-            title="Inject into terminal"
-            onClick={(e) => {
-              e.currentTarget.blur()
-              onInject(item)
-            }}
-          >
-            <InjectIcon />
-          </button>
-          <button
-            className="lib-item-x"
-            title="Rename"
-            onClick={() => beginRename({ kind: 'command', id: item.id }, item.name)}
-          >
-            <PencilIcon />
-          </button>
-          <button className="lib-item-x" title="Remove saved" onClick={() => onRemove(item.id)}>
-            <TrashIcon />
-          </button>
-        </span>
-      )}
+      <span className="lib-item-tools">
+        <button
+          className="lib-item-x"
+          title="Inject into terminal"
+          onClick={(e) => {
+            e.currentTarget.blur()
+            onInject(item)
+          }}
+        >
+          <InjectIcon />
+        </button>
+        <button className="lib-item-x" title="Edit" onClick={() => onEditScript(item)}>
+          <PencilIcon />
+        </button>
+        <button className="lib-item-x" title="Remove saved" onClick={() => onRemove(item.id)}>
+          <TrashIcon />
+        </button>
+      </span>
     </li>
   )
 }
@@ -900,6 +896,7 @@ function FolderGroup({
   selectedIds,
   onInject,
   onRemove,
+  onEditScript,
   onDelete,
   drag,
   onCommandDragStart,
@@ -970,6 +967,7 @@ function FolderGroup({
               selectedIds={selectedIds}
               onInject={onInject}
               onRemove={onRemove}
+              onEditScript={onEditScript}
               drag={drag}
               dropHint={dropHint}
               onCommandDragStart={onCommandDragStart}
@@ -1091,6 +1089,79 @@ function ConfirmDeleteModal({
           </button>
           <button className="ghost-btn danger" onClick={onConfirm}>
             Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function EditScriptModal({
+  item,
+  onCancel,
+  onSave
+}: {
+  item: SavedCommandItem
+  onCancel: () => void
+  onSave: (name: string, script: string) => void
+}): JSX.Element {
+  const [name, setName] = useState(item.name)
+  const [script, setScript] = useState(item.rawCommand ?? item.preview)
+  const nameRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    nameRef.current?.focus()
+    nameRef.current?.select()
+  }, [])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onCancel()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onCancel])
+
+  const canSave = name.trim() !== '' && script.trim() !== ''
+
+  return (
+    <div className="modal-overlay" onClick={onCancel}>
+      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <h2>Edit Saved Command</h2>
+        </div>
+        <div className="modal-body">
+          <div className="form-row">
+            <label>Title</label>
+            <input
+              ref={nameRef}
+              className="flag-input"
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+          <div className="form-row" style={{ alignItems: 'start' }}>
+            <label style={{ paddingTop: 'var(--space-2)' }}>Script</label>
+            <textarea
+              className="flag-input"
+              rows={6}
+              spellCheck={false}
+              value={script}
+              onChange={(e) => setScript(e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="modal-foot">
+          <button className="ghost-btn" onClick={onCancel}>
+            Cancel
+          </button>
+          <button
+            className="ghost-btn success"
+            disabled={!canSave}
+            onClick={() => onSave(name, script)}
+          >
+            Save
           </button>
         </div>
       </div>
