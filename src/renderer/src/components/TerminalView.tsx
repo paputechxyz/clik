@@ -281,26 +281,39 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
     // the rendered line from the xterm buffer and use lineBuf to locate/strip
     // the prompt, which also resolves tab completion (buffer > keystrokes).
     let lineBuf = ''
-    const readCommandLine = (): string => {
-      const buf = term.buffer.active
-      const line = buf.getLine(buf.baseY + buf.cursorY)
+    let historyTimer: ReturnType<typeof setTimeout> | null = null
+    const readCommandLine = (row: number): string => {
+      const line = term.buffer.active.getLine(row)
       return line ? line.translateToString(true).trimEnd() : ''
     }
+    // History recall (arrow keys / prefix search) redraws the line via a PTY
+    // round-trip that has not necessarily landed by the time Enter's onData
+    // fires — reading the buffer synchronously here can catch it mid-redraw
+    // (e.g. typing "sf" + Up + Enter racing the shell's echo of the recalled
+    // command back to just "sf"). Snapshot the row now (before any further
+    // writes shift it) but defer the read itself to let a pending redraw
+    // flush first.
     const submitLine = (): void => {
-      const fullLine = readCommandLine()
-      let command: string
-      if (lineBuf && fullLine.includes(lineBuf)) {
-        // Typed prefix locates the command on the rendered line; the suffix
-        // from its last occurrence is the full command (drops the prompt and
-        // picks up completions/recalls the keystream alone missed).
-        command = fullLine.slice(fullLine.lastIndexOf(lineBuf))
-      } else {
-        // Paste / un-echoed input: lineBuf already holds the command verbatim.
-        command = lineBuf
-      }
+      const row = term.buffer.active.baseY + term.buffer.active.cursorY
+      const capturedLineBuf = lineBuf
       lineBuf = ''
-      const trimmed = command.trim()
-      if (trimmed) useAppStore.getState().addTerminalHistory(trimmed)
+      if (historyTimer !== null) clearTimeout(historyTimer)
+      historyTimer = setTimeout(() => {
+        historyTimer = null
+        const fullLine = readCommandLine(row)
+        let command: string
+        if (capturedLineBuf && fullLine.includes(capturedLineBuf)) {
+          // Typed prefix locates the command on the rendered line; the suffix
+          // from its last occurrence is the full command (drops the prompt and
+          // picks up completions/recalls the keystream alone missed).
+          command = fullLine.slice(fullLine.lastIndexOf(capturedLineBuf))
+        } else {
+          // Paste / un-echoed input: lineBuf already holds the command verbatim.
+          command = capturedLineBuf
+        }
+        const trimmed = command.trim()
+        if (trimmed) useAppStore.getState().addTerminalHistory(trimmed)
+      }, 80)
     }
 
     term.onData((d) => {
@@ -481,6 +494,7 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
 
     return () => {
       alive = false
+      if (historyTimer !== null) clearTimeout(historyTimer)
       unregisterSlot()
       unsubBus()
       cancelAnimationFrame(raf)
