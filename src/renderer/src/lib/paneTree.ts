@@ -403,6 +403,14 @@ export function resizeSplit(
   return replaceSplit(root, splitId, weights)
 }
 
+/** Reset every split in the tree — at every depth — to even weights among its children. */
+export function evenizeWeights(node: PaneNode): PaneNode {
+  if (node.kind === 'leaf') return node
+  const children = node.children.map(evenizeWeights)
+  const even = 1 / children.length
+  return { ...node, children, weights: children.map(() => even) }
+}
+
 function replaceSplit(node: PaneNode, splitId: string, weights: number[]): PaneNode {
   if (node.kind === 'leaf') return node
   if (node.id === splitId) return { ...node, weights }

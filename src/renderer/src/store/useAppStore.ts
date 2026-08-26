@@ -23,6 +23,7 @@ import {
 import { parseCommandTokens } from '../lib/parseCommand'
 import {
   addRunToLeaf,
+  evenizeWeights,
   findLeaf,
   findLeafOfRun,
   leaves,
@@ -347,6 +348,7 @@ interface AppState {
   moveRunToPane: (runId: string, paneId: string, index: number) => void
   splitPaneWithRun: (paneId: string, edge: Edge, runId: string) => void
   resizePaneSplit: (splitId: string, index: number, containerPx: number, deltaPx: number) => void
+  organizePaneLayout: () => void
   renameRun: (id: string, title: string) => void
   clearRun: (id: string) => void
   handlePtyEvent: (e: PtyEvent) => void
@@ -695,6 +697,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       const root = resizeSplit(s.paneLayout.root, splitId, index, containerPx, deltaPx)
       return root === s.paneLayout.root ? {} : { paneLayout: { ...s.paneLayout, root } }
     })
+  },
+
+  organizePaneLayout() {
+    set((s) => ({ paneLayout: { ...s.paneLayout, root: evenizeWeights(s.paneLayout.root) } }))
   },
 
   renameRun(id, title) {

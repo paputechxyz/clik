@@ -9,7 +9,7 @@ import { RunTabs } from './components/RunTabs'
 import { TerminalHostLayer } from './components/TerminalHostLayer'
 import { Resizer } from './components/Resizer'
 import { ptyDataBus } from './lib/pty-events'
-import { ChevronUpIcon, GearIcon } from './components/icons'
+import { ChevronUpIcon, GearIcon, OrganizeIcon } from './components/icons'
 import './types'
 
 export function App(): JSX.Element {
@@ -17,6 +17,7 @@ export function App(): JSX.Element {
   const loadLibrary = useAppStore((s) => s.loadLibrary)
   const handlePtyEvent = useAppStore((s) => s.handlePtyEvent)
   const openShellTab = useAppStore((s) => s.openShellTab)
+  const organizePaneLayout = useAppStore((s) => s.organizePaneLayout)
   const closeRun = useAppStore((s) => s.closeRun)
   const clearRun = useAppStore((s) => s.clearRun)
   const toggleOutputExpanded = useLayoutStore((s) => s.toggleOutputExpanded)
@@ -129,6 +130,9 @@ export function App(): JSX.Element {
       <header className="titlebar">
         <div className="title">CLIk</div>
         <div className="toolbar">
+          <button className="icon-btn" title="Organize terminals" onClick={organizePaneLayout}>
+            <OrganizeIcon />
+          </button>
           <button className="icon-btn" title="Settings" onClick={() => setSettingsOpen(true)}>
             <GearIcon />
           </button>
