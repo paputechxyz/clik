@@ -22,7 +22,9 @@
     "src/**/*.ts",
     "src/**/*.tsx",
     "src/**/*.d.ts",
+    "e2e/**/*.ts",
     "electron.vite.config.ts",
-    "vitest.config.ts"
+    "vitest.config.ts",
+    "vitest.e2e.config.ts"
   ]
 }

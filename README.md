@@ -77,6 +77,9 @@ on restart automatically.
 - `pnpm run build:mac` — build a macOS app dir to `dist/`
 - `pnpm run typecheck` — `tsc --noEmit`
 - `pnpm test` — run Vitest unit tests
+- `pnpm run test:e2e` — build, then drive the real app via Playwright
+  (`e2e/`). Opens a window and types into a live shell, so it is kept out of
+  `pnpm test` and out of CI.
 
 ## Architecture
 
@@ -88,6 +91,8 @@ on restart automatically.
 - `src/renderer/` — React UI: column navigator, flag panel, terminal tabs
   (xterm.js). State in Zustand.
 - `src/shared/types.ts` — types shared across the three contexts.
+- `e2e/` — Playwright-driven checks against the built app, for behaviour that
+  only exists with a real window and a real PTY (terminal history capture).
 
 Runs execute in a pseudo-terminal (`node-pty`): keystrokes flow
 xterm → PTY (so `Ctrl+C` is delivered by the kernel's line discipline), and
