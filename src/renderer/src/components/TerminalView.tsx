@@ -282,35 +282,78 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
     // the prompt, which also resolves tab completion (buffer > keystrokes).
     let lineBuf = ''
     let historyTimer: ReturnType<typeof setTimeout> | null = null
-    const readCommandLine = (row: number): string => {
-      const line = term.buffer.active.getLine(row)
-      return line ? line.translateToString(true).trimEnd() : ''
+    // Where this line's input begins, just past the prompt. Captured on the
+    // line's first input byte — at that moment the shell has already drawn the
+    // prompt and nothing has been typed, so cursorX is exactly its width.
+    // Keying off this instead of searching for the typed text is what makes
+    // recall work: Up/Down and tab completion redraw the line from the shell
+    // with no keystrokes to search for.
+    let lineStart: { row: number; col: number } | null = null
+    const noteLineStart = (): void => {
+      if (lineStart !== null) return
+      const buf = term.buffer.active
+      lineStart = { row: buf.baseY + buf.cursorY, col: buf.cursorX }
     }
-    // History recall (arrow keys / prefix search) redraws the line via a PTY
-    // round-trip that has not necessarily landed by the time Enter's onData
-    // fires — reading the buffer synchronously here can catch it mid-redraw
-    // (e.g. typing "sf" + Up + Enter racing the shell's echo of the recalled
-    // command back to just "sf"). Snapshot the row now (before any further
-    // writes shift it) but defer the read itself to let a pending redraw
-    // flush first.
-    const submitLine = (): void => {
-      const row = term.buffer.active.baseY + term.buffer.active.cursorY
-      const capturedLineBuf = lineBuf
+
+    // A long command spills over several rows, and all of them have to be read
+    // or the command is captured truncated at the first row break.
+    //
+    // xterm's isWrapped flag is no help here: the shell's line editor lays out
+    // its own multi-row input with explicit cursor moves rather than letting the
+    // terminal soft-wrap, so continuation rows of the *input* come through
+    // unflagged (isWrapped is only dependable for program output). What does
+    // hold is that a row the text runs on fills every cell, while the row the
+    // command ends on has space left over — so stop after the first row that
+    // isn't full. translateToString(false) pads each row to the full width,
+    // which both makes that test meaningful and keeps column offsets aligned
+    // across the join.
+    const readInputLine = (startRow: number): string => {
+      const buf = term.buffer.active
+      let text = ''
+      for (let row = startRow; row < buf.length; row++) {
+        const line = buf.getLine(row)
+        if (!line) break
+        const raw = line.translateToString(false)
+        text += raw
+        if (raw === '' || raw[raw.length - 1] === ' ') break
+      }
+      return text
+    }
+
+    // `bulk` means the Enter arrived in the same chunk as the text before it —
+    // a paste, whose echo cannot possibly have reached the buffer yet.
+    const submitLine = (bulk: boolean): void => {
+      const start = lineStart
+      const typed = lineBuf
       lineBuf = ''
+      lineStart = null
       if (historyTimer !== null) clearTimeout(historyTimer)
+
+      // What the shell had drawn at the instant Enter was pressed. Nothing the
+      // shell does afterwards can retroactively change it, which is what makes
+      // it the trustworthy baseline.
+      const atEnter = start ? readInputLine(start.row).slice(start.col).trimEnd() : ''
+
+      if (atEnter === '') {
+        // Nothing was on screen. Either the input is hidden by design (password
+        // prompts, `read -s`) — which must never be recorded, and must not be
+        // re-read later either, because by then the shell has drawn its next
+        // prompt over this row and we would file that away as a command — or it
+        // came in one bulk chunk, where the keystroke mirror is all there is.
+        const pasted = bulk ? typed.trim() : ''
+        if (pasted) useAppStore.getState().addTerminalHistory(pasted)
+        return
+      }
+
+      // Characters typed just before Enter, and recall/completion redraws, can
+      // still be in flight. Re-read once they have had a moment to land, but
+      // only take the result if it *extends* what was already there — anything
+      // else means the shell has moved on (a fresh prompt, or `clear` wiping the
+      // buffer) and the baseline is what actually ran.
       historyTimer = setTimeout(() => {
         historyTimer = null
-        const fullLine = readCommandLine(row)
-        let command: string
-        if (capturedLineBuf && fullLine.includes(capturedLineBuf)) {
-          // Typed prefix locates the command on the rendered line; the suffix
-          // from its last occurrence is the full command (drops the prompt and
-          // picks up completions/recalls the keystream alone missed).
-          command = fullLine.slice(fullLine.lastIndexOf(capturedLineBuf))
-        } else {
-          // Paste / un-echoed input: lineBuf already holds the command verbatim.
-          command = capturedLineBuf
-        }
+        const settled = start ? readInputLine(start.row).slice(start.col).trimEnd() : ''
+        const command = settled.startsWith(atEnter) ? settled : atEnter
         const trimmed = command.trim()
         if (trimmed) useAppStore.getState().addTerminalHistory(trimmed)
       }, 80)
@@ -318,15 +361,21 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
 
     term.onData((d) => {
       if (restoringRef.current) return
+      // Before the input is echoed, so the cursor is still at the prompt.
+      noteLineStart()
       window.clik.pty.input(run.id, d)
 
       let i = 0
+      // Printable text seen earlier in *this* chunk — the tell-tale of a paste,
+      // since a keystroke arrives in a chunk of its own.
+      let bulk = false
       while (i < d.length) {
         const code = d.charCodeAt(i)
         const ch = d[i]
 
         if (ch === '\r' || ch === '\n') {
-          submitLine()
+          submitLine(bulk)
+          bulk = false
         } else if (code === 0x7f || code === 0x08) {
           // DEL / Backspace
           lineBuf = lineBuf.slice(0, -1)
@@ -337,8 +386,10 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
           // Ctrl+W — kill word
           lineBuf = lineBuf.replace(/[ \t]*\S+[ \t]*$/, '')
         } else if (code === 0x03 || code === 0x1a) {
-          // Ctrl+C / Ctrl+Z — abandon the line
+          // Ctrl+C / Ctrl+Z — abandon the line. A fresh prompt follows, so the
+          // anchor has to be re-taken on the next keystroke.
           lineBuf = ''
+          lineStart = null
         } else if (code === 0x1b) {
           // Escape sequence (arrows, function keys, etc.) — consume it whole so
           // its trailing printable bytes (e.g. the "[A" in "\x1b[A") don't leak
@@ -362,6 +413,7 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
           continue
         } else if (code >= 0x20) {
           lineBuf += ch
+          bulk = true
         }
         i++
       }
