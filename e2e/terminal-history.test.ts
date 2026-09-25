@@ -135,13 +135,101 @@ describe('paste', () => {
     expect((await h.history())[0]).toBe(cmd)
   })
 
-  it('records a paste whose trailing newline submits it', async () => {
-    // Arrives as one chunk, so the echo cannot have reached the buffer yet and
-    // the keystroke mirror is the only source.
+  it('does not run, or record, a paste on its trailing newline', async () => {
+    // Under bracketed paste the shell keeps a pasted newline in its buffer
+    // instead of executing on it — that is the point of the mode. Recording
+    // here would file away a command that has not run.
     const cmd = 'echo "paste-marker-beta trailing newline"'
+    const before = await h.history()
     await h.paste(cmd + '\n')
     await sleep(1600)
-    expect((await h.history())[0]).toBe(cmd)
+    expect(await h.screenText()).not.toContain('\npaste-marker-beta')
+    expect(await h.history()).toHaveLength(before.length)
+
+    await h.press('Enter')
+    await sleep(1400)
+    const after = await h.history()
+    expect(after[0]).toBe(cmd)
+    expect(after.length - before.length).toBe(1)
+  })
+})
+
+// The reported bug: only the first row of this survived into History.
+const CONTINUED = [
+  'sf project deploy start -o credit-sync-2 --ignore-conflicts \\',
+  '  -m ApexClass:ChangeOrderCalculator \\',
+  '  -m ApexClass:ChangeOrderPriceRecalculator \\',
+  '  -m ApexClass:ChangeOrderPriceRecalculatorQuery \\',
+  '  -m ApexClass:ChangeOrderRecalculationResultProcessor \\',
+  '  -m ApexClass:LineEditorService'
+]
+
+describe('input spanning several Enters', () => {
+  it('shadows sf so the deploy cannot reach a real org', async () => {
+    const { newest } = await submit(h, { type: 'sf() { echo stub-sf "$@"; }' })
+    expect(newest).toBe('sf() { echo stub-sf "$@"; }')
+  })
+
+  it('records a backslash-continued command typed line by line as one entry', async () => {
+    // Each Enter after a trailing backslash gets a PS2 prompt and the shell
+    // waits; the command only runs on the last one.
+    const before = await h.history()
+    for (const line of CONTINUED) {
+      await h.type(line, 3)
+      await sleep(250)
+      await h.press('Enter')
+      await sleep(500)
+    }
+    await sleep(1000)
+    const after = await h.history()
+    expect(after[0]).toBe(CONTINUED.join('\n'))
+    expect(after.length - before.length).toBe(1)
+    expect(await h.screenText()).toContain('stub-sf project deploy start')
+  })
+
+  it('records a pasted multi-line command submitted by one Enter, in full', async () => {
+    // Bracketed paste puts the whole block into the shell's buffer as one
+    // multi-line input, drawn over several rows none of which is full.
+    await submit(h, { type: 'echo between-typed-and-pasted' })
+    const before = await h.history()
+    await h.paste(CONTINUED.join('\n'))
+    await sleep(900)
+    await h.press('Enter')
+    await sleep(1500)
+    const after = await h.history()
+    expect(after[0]).toBe(CONTINUED.join('\n'))
+    expect(after.length - before.length).toBe(1)
+  })
+
+  it('records a quoted string that spans lines as one entry', async () => {
+    const before = await h.history()
+    await submit(h, { type: 'echo "line one', settleMs: 600 })
+    expect(await h.history()).toHaveLength(before.length)
+    const { newest } = await submit(h, { type: 'line two"' })
+    expect(newest).toBe('echo "line one\nline two"')
+    expect((await h.history()).length - before.length).toBe(1)
+  })
+
+  it('records a heredoc with its body as one entry', async () => {
+    const before = await h.history()
+    await submit(h, { type: 'cat <<EOF', settleMs: 600 })
+    await submit(h, { type: "body it's here", settleMs: 600 })
+    expect(await h.history()).toHaveLength(before.length)
+    const { newest } = await submit(h, { type: 'EOF' })
+    expect(newest).toBe("cat <<EOF\nbody it's here\nEOF")
+    expect((await h.history()).length - before.length).toBe(1)
+  })
+
+  it('drops a continuation abandoned with Ctrl+C', async () => {
+    const before = await h.history()
+    await submit(h, { type: 'echo "abandoned start', settleMs: 600 })
+    await h.press('Control+c')
+    await sleep(700)
+    const { newest, added } = await submit(h, { type: 'echo after-abandoned-continuation' })
+    expect(newest).toBe('echo after-abandoned-continuation')
+    expect(added).toBe(1)
+    expect((await h.history()).join('\n')).not.toContain('abandoned start')
+    expect((await h.history()).length - before.length).toBe(1)
   })
 })
 

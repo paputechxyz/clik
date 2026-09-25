@@ -205,7 +205,7 @@ export function shellSplit(input: string): string[] {
 // or a substitution/group. A real shell would not treat `;`, whitespace, or a
 // stray newline there as a top-level separator — `collapseWrappedNewlines`
 // and `hasTopLevelSemicolon` below both key off this.
-function computeShellProtection(input: string): boolean[] {
+export function computeShellProtection(input: string): boolean[] {
   const protectedAt: boolean[] = new Array(input.length).fill(false)
   let quote: '"' | "'" | null = null
   let escaped = false

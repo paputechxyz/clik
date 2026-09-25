@@ -7,6 +7,7 @@ import { useAppStore } from '../store/useAppStore'
 import { ptyDataBus } from '../lib/pty-events'
 import { registerHooks } from '../lib/terminalSlots'
 import { translateEditKey, computeCursorDelta } from '../lib/term-keys'
+import { isUnfinishedShellInput, readLogicalInput } from '../lib/term-history'
 import { ChevronUpIcon, ChevronDownIcon, CloseIcon } from './icons'
 import { ContextMenu } from './ContextMenu'
 import type { ContextMenuItem } from './ContextMenu'
@@ -278,10 +279,14 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
     // Track the in-progress shell line so commands typed directly in the
     // terminal are recorded in the history panel (not just flag-panel Runs).
     // lineBuf mirrors printable keystrokes (no shell prompt); on Enter we read
-    // the rendered line from the xterm buffer and use lineBuf to locate/strip
-    // the prompt, which also resolves tab completion (buffer > keystrokes).
+    // the rendered input back from the xterm buffer, which is what recall and
+    // tab completion actually update.
     let lineBuf = ''
-    let historyTimer: ReturnType<typeof setTimeout> | null = null
+    // Newlines pasted into the current line under bracketed paste. The shell
+    // holds them in its buffer as one multi-line input, so they are not
+    // submits — and they are the floor on how many rows the read must span.
+    let pasteNewlines = 0
+    const historyTimers = new Set<ReturnType<typeof setTimeout>>()
     // Where this line's input begins, just past the prompt. Captured on the
     // line's first input byte — at that moment the shell has already drawn the
     // prompt and nothing has been typed, so cursorX is exactly its width.
@@ -295,29 +300,39 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
       lineStart = { row: buf.baseY + buf.cursorY, col: buf.cursorX }
     }
 
-    // A long command spills over several rows, and all of them have to be read
-    // or the command is captured truncated at the first row break.
-    //
-    // xterm's isWrapped flag is no help here: the shell's line editor lays out
-    // its own multi-row input with explicit cursor moves rather than letting the
-    // terminal soft-wrap, so continuation rows of the *input* come through
-    // unflagged (isWrapped is only dependable for program output). What does
-    // hold is that a row the text runs on fills every cell, while the row the
-    // command ends on has space left over — so stop after the first row that
-    // isn't full. translateToString(false) pads each row to the full width,
-    // which both makes that test meaningful and keeps column offsets aligned
-    // across the join.
-    const readInputLine = (startRow: number): string => {
+    // Rows submitted so far of a command the shell is still waiting to finish
+    // — a trailing backslash, an open quote, a heredoc. Each Enter yields one
+    // segment (re-anchored past the continuation prompt on the next keystroke)
+    // and they are joined into one entry once the shell has enough to run.
+    let pending: string[] = []
+    // Bumped when the line is abandoned (Ctrl+C), so a segment that was still
+    // settling does not revive a discarded continuation.
+    let generation = 0
+
+    const readInput = (
+      start: { row: number; col: number },
+      cursorRow: number,
+      minLines: number
+    ): { text: string; lastRow: number } => {
       const buf = term.buffer.active
-      let text = ''
-      for (let row = startRow; row < buf.length; row++) {
-        const line = buf.getLine(row)
-        if (!line) break
-        const raw = line.translateToString(false)
-        text += raw
-        if (raw === '' || raw[raw.length - 1] === ' ') break
+      return readLogicalInput(
+        (row) => buf.getLine(row)?.translateToString(false),
+        start,
+        cursorRow,
+        minLines
+      )
+    }
+
+    const commitSegment = (segment: string, gen: number): void => {
+      if (segment === '' && pending.length === 0) return
+      const text = [...pending, segment].join('\n')
+      if (isUnfinishedShellInput(text)) {
+        if (gen === generation) pending.push(segment)
+        return
       }
-      return text
+      pending = []
+      const trimmed = text.trim()
+      if (trimmed) useAppStore.getState().addTerminalHistory(trimmed)
     }
 
     // `bulk` means the Enter arrived in the same chunk as the text before it —
@@ -325,39 +340,47 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
     const submitLine = (bulk: boolean): void => {
       const start = lineStart
       const typed = lineBuf
+      const minLines = pasteNewlines + 1
       lineBuf = ''
       lineStart = null
-      if (historyTimer !== null) clearTimeout(historyTimer)
+      pasteNewlines = 0
+      const gen = generation
 
       // What the shell had drawn at the instant Enter was pressed. Nothing the
       // shell does afterwards can retroactively change it, which is what makes
       // it the trustworthy baseline.
-      const atEnter = start ? readInputLine(start.row).slice(start.col).trimEnd() : ''
-
-      if (atEnter === '') {
-        // Nothing was on screen. Either the input is hidden by design (password
-        // prompts, `read -s`) — which must never be recorded, and must not be
-        // re-read later either, because by then the shell has drawn its next
-        // prompt over this row and we would file that away as a command — or it
-        // came in one bulk chunk, where the keystroke mirror is all there is.
-        const pasted = bulk ? typed.trim() : ''
-        if (pasted) useAppStore.getState().addTerminalHistory(pasted)
-        return
-      }
+      const buf = term.buffer.active
+      const cursorRow = buf.baseY + buf.cursorY
+      const atEnter = start ? readInput(start, cursorRow, minLines) : { text: '', lastRow: cursorRow }
 
       // Characters typed just before Enter, and recall/completion redraws, can
       // still be in flight. Re-read once they have had a moment to land, but
       // only take the result if it *extends* what was already there — anything
       // else means the shell has moved on (a fresh prompt, or `clear` wiping the
-      // buffer) and the baseline is what actually ran.
-      historyTimer = setTimeout(() => {
-        historyTimer = null
-        const settled = start ? readInputLine(start.row).slice(start.col).trimEnd() : ''
-        const command = settled.startsWith(atEnter) ? settled : atEnter
-        const trimmed = command.trim()
-        if (trimmed) useAppStore.getState().addTerminalHistory(trimmed)
+      // buffer) and the baseline is what actually ran. Every Enter gets its own
+      // timer so segments commit in the order they were submitted.
+      const timer = setTimeout(() => {
+        historyTimers.delete(timer)
+        let segment: string
+        if (atEnter.text === '') {
+          // Nothing was on screen. Either the input is hidden by design
+          // (password prompts, `read -s`) — which must never be recorded, and
+          // must not be re-read either, because by now the shell has drawn its
+          // next prompt over this row and we would file that away as a command
+          // — or it came in one bulk chunk, where the keystroke mirror is all
+          // there is.
+          segment = bulk ? typed.trim() : ''
+        } else {
+          const settled = start ? readInput(start, atEnter.lastRow, minLines).text : ''
+          segment = settled.startsWith(atEnter.text) ? settled : atEnter.text
+        }
+        commitSegment(segment, gen)
       }, 80)
+      historyTimers.add(timer)
     }
+
+    const PASTE_BEGIN = '\x1b[200~'
+    const PASTE_END = '\x1b[201~'
 
     term.onData((d) => {
       if (restoringRef.current) return
@@ -369,13 +392,22 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
       // Printable text seen earlier in *this* chunk — the tell-tale of a paste,
       // since a keystroke arrives in a chunk of its own.
       let bulk = false
+      // Inside the bracketed-paste markers xterm wraps a paste in when the
+      // shell asked for them. A newline there is inserted into the shell's
+      // buffer, not executed. xterm sends the whole paste in one chunk.
+      let inPaste = false
       while (i < d.length) {
         const code = d.charCodeAt(i)
         const ch = d[i]
 
         if (ch === '\r' || ch === '\n') {
-          submitLine(bulk)
-          bulk = false
+          if (inPaste) {
+            lineBuf += '\n'
+            pasteNewlines++
+          } else {
+            submitLine(bulk)
+            bulk = false
+          }
         } else if (code === 0x7f || code === 0x08) {
           // DEL / Backspace
           lineBuf = lineBuf.slice(0, -1)
@@ -386,15 +418,25 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
           // Ctrl+W — kill word
           lineBuf = lineBuf.replace(/[ \t]*\S+[ \t]*$/, '')
         } else if (code === 0x03 || code === 0x1a) {
-          // Ctrl+C / Ctrl+Z — abandon the line. A fresh prompt follows, so the
-          // anchor has to be re-taken on the next keystroke.
+          // Ctrl+C / Ctrl+Z — abandon the line, and with it any continuation
+          // rows already submitted. A fresh prompt follows, so the anchor has
+          // to be re-taken on the next keystroke.
           lineBuf = ''
           lineStart = null
+          pasteNewlines = 0
+          pending = []
+          generation++
         } else if (code === 0x1b) {
           // Escape sequence (arrows, function keys, etc.) — consume it whole so
           // its trailing printable bytes (e.g. the "[A" in "\x1b[A") don't leak
           // into the typed-line buffer.
-          if (d[i + 1] === '[') {
+          if (d.startsWith(PASTE_BEGIN, i)) {
+            inPaste = true
+            i += PASTE_BEGIN.length
+          } else if (d.startsWith(PASTE_END, i)) {
+            inPaste = false
+            i += PASTE_END.length
+          } else if (d[i + 1] === '[') {
             let j = i + 2
             while (j < d.length && d.charCodeAt(j) < 0x40) j++
             i = Math.min(j + 1, d.length)
@@ -546,7 +588,7 @@ export function TerminalView({ run }: { run: Run }): JSX.Element {
 
     return () => {
       alive = false
-      if (historyTimer !== null) clearTimeout(historyTimer)
+      for (const t of historyTimers) clearTimeout(t)
       unregisterSlot()
       unsubBus()
       cancelAnimationFrame(raf)
